@@ -1,2 +1,2 @@
 # GBEmuCore
-Gam Boy Emulator in .NET Core
+Game Boy Emulator in .NET Core
