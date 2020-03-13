@@ -524,7 +524,7 @@ namespace GBCore
                     }
                     break;
 
-                // DEC R (B, D, H)
+                // DEC R (C, E, L)
                 case 0x0D: case 0x1D: case 0x2D:
                     {
                         int reg = (opcode & 0xF0 << 1) + 1;
@@ -565,6 +565,38 @@ namespace GBCore
                 case 0x33:
                     {
                         SP += 1;
+                        PC++;
+                    }
+                    break;
+
+                // DEC BC
+                case 0x0B:
+                    {
+                        BC -= 1;
+                        PC++;
+                    }
+                    break;
+
+                // DEC DE
+                case 0x1B:
+                    {
+                        DE -= 1;
+                        PC++;
+                    }
+                    break;
+
+                // DEC HL
+                case 0x2B:
+                    {
+                        HL -= 1;
+                        PC++;
+                    }
+                    break;
+
+                // DEC SP
+                case 0x3B:
+                    {
+                        SP -= 1;
                         PC++;
                     }
                     break;
