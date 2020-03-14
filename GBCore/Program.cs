@@ -6,7 +6,10 @@ namespace GBCore
     {
         public static void Main(string[] args)
         {
-            Console.WriteLine("Hello World!");
+            byte a = 255;
+            byte b = 1;
+
+            Console.WriteLine(a + b > 0xFF);
         }
     }
 }
