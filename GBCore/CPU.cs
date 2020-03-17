@@ -114,7 +114,10 @@ namespace GBCore
         public byte[] VRAM = new byte[8196];       
 
         public ushort I;
-        public ushort PC;        
+        public ushort PC;
+
+        public byte IME;
+        public bool IME_enable;
 
         public ushort[] Stack = new ushort[32];
         public ushort SP;
@@ -143,6 +146,7 @@ namespace GBCore
             DE = 0x00D8;
             BC = 0x0013;
             AF = 0x01B0;
+            IME = 0;
 
             RAM[0xFF05] = 0x00;
             RAM[0xFF06] = 0x00;
@@ -876,6 +880,38 @@ namespace GBCore
                     }
                     break;
 
+                // ADD A, d8
+                case 0xC6:
+                    {
+                        byte value = RAM[PC++];
+                        FlagN = false;
+                        FlagH = IsHalfCarry(REG[A], value);
+                        FlagC = REG[A] + value > 0xFF;
+
+                        REG[A] += value;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // ADD SP, r8
+                case 0xE8:
+                    {
+                        sbyte value = (sbyte)RAM[PC++];
+                        FlagN = false;
+                        FlagH = IsHalfCarry(SP, (ushort)value);
+                        FlagC = value + value > 0xFF;
+
+                        SP += (ushort)value;
+                        FlagZ = false;
+
+                        PC++;
+                        _cycleCount += 16;
+                    }
+                    break;
+
                 // ADC A, r8
                 case 0x88: case 0x89: case 0x8A: case 0x8B: case 0x8C: case 0x8D: case 0x8F:
                     {
@@ -891,7 +927,23 @@ namespace GBCore
                         PC++;
                         _cycleCount += 4;                        
                     }
-                    break;                
+                    break;       
+                    
+                // ADC A, d8
+                case 0xCE: 
+                    {
+                        byte val = (byte)(RAM[PC++] + (FlagC ? 1 : 0));
+                        FlagN = false;
+                        FlagH = IsHalfCarry(REG[A], val);
+                        FlagC = REG[A] + val > 0xFF;
+
+                        REG[A] += val;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;                        
+                    }
+                    break; 
 
                 // ADC A, (HL)
                 case 0x8E:
@@ -940,6 +992,22 @@ namespace GBCore
                     }
                     break;
 
+                // SUB A, d8
+                case 0xD6:
+                    {
+                        byte value = RAM[PC++];
+                        FlagN = true;
+                        FlagH = IsHalfCarry(REG[A], value);
+                        FlagC = REG[A] - value < 0;
+
+                        REG[A] -= value;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
                 // SBC A, r8
                 case 0x98: case 0x99: case 0x9A: case 0x9B: case 0x9C: case 0x9D: case 0x9F:
                     {
@@ -955,7 +1023,23 @@ namespace GBCore
                         PC++;
                         _cycleCount += 4;
                     }
-                    break;                
+                    break;     
+                    
+                // SBC A, d8
+                case 0xDE: 
+                    {
+                        byte val = (byte)(RAM[PC++] + (FlagC ? 1 : 0));
+                        FlagN = true;
+                        FlagH = IsHalfCarry(REG[A], val);
+                        FlagC = REG[A] - val < 0;
+
+                        REG[A] -= val;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;     
 
                 // SBC A, (HL)
                 case 0x9E:
@@ -1002,6 +1086,22 @@ namespace GBCore
                         PC++;
                         _cycleCount += 4;
                     }
+                    break;  
+
+                // AND A, d8
+                case 0xE6: 
+                    {
+                        byte value = RAM[PC++];
+                        FlagN = false;
+                        FlagH = true;
+                        FlagC = false;
+
+                        REG[A] &= value;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
                     break;               
 
                 // AND A, (HL)
@@ -1033,7 +1133,23 @@ namespace GBCore
                         PC++;
                         _cycleCount += 4;
                     }
-                    break;                
+                    break;  
+                    
+                // OR A, d8
+                case 0xF6: 
+                    {
+                        byte value = RAM[PC++];
+                        FlagN = false;
+                        FlagH = false;
+                        FlagC = false;
+
+                        REG[A] |= value;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
 
                 // OR A, (HL)
                 case 0xB6:
@@ -1064,7 +1180,22 @@ namespace GBCore
                         PC++;
                         _cycleCount += 4;
                     }
-                    break;                 
+                    break;  
+                    
+                // XOR A, r8
+                case 0xEE:
+                    {
+                        FlagN = false;
+                        FlagH = false;
+                        FlagC = false;
+
+                        REG[A] ^= RAM[PC++];
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break; 
 
                  // XOR A, (HL)
                 case 0xAE: 
@@ -1095,7 +1226,22 @@ namespace GBCore
                         PC++;
                         _cycleCount += 4;
                     }
-                    break;                
+                    break;   
+                    
+                // CP A, d8
+                case 0xFE:
+                    {
+                        byte val = (byte)(RAM[PC++] + (FlagC ? 1 : 0));
+                        FlagN = true;
+                        FlagH = IsHalfCarry(REG[A], val);
+                        FlagC = REG[A] - val < 0;
+
+                        FlagZ = (REG[A] - val) == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;   
 
                 // CP A, (HL)
                 case 0xBE:
@@ -1210,7 +1356,218 @@ namespace GBCore
                             PC++;
                         }
                     }
-                    break;                
+                    break;
+
+                // JP a16
+                case 0xc3:
+                    {
+                        ushort addr = (ushort)(RAM[PC++] + (RAM[PC++] << 8));
+                        PC = addr;
+                        _cycleCount += 16;
+                    }
+                    break;
+
+                // JP HL
+                case 0xE9:
+                    {
+                        PC = HL;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // JP NZ a16
+                case 0xC2:
+                    {
+                        ushort addr = (ushort)(RAM[PC++] + (RAM[PC++] << 8));
+                        if (!FlagZ)
+                        {
+                            PC = addr;
+                            _cycleCount += 16;
+                        }
+                    }
+                    break;
+
+                // JP NZ a16
+                case 0xD2:
+                    {
+                        ushort addr = (ushort)(RAM[PC++] + (RAM[PC++] << 8));
+                        if (!FlagC)
+                        {
+                            PC = addr;
+                            _cycleCount += 16;
+                        }
+                    }
+                    break;
+
+                // JP Z a16
+                case 0xCA:
+                    {
+                        ushort addr = (ushort)(RAM[PC++] + (RAM[PC++] << 8));
+                        if (FlagZ)
+                        {
+                            PC = addr;
+                            _cycleCount += 16;
+                        }
+                    }
+                    break;
+
+                // JP C a16
+                case 0xDA:
+                    {
+                        ushort addr = (ushort)(RAM[PC++] + (RAM[PC++] << 8));
+                        if (FlagC)
+                        {
+                            PC = addr;
+                            _cycleCount += 16;
+                        }
+                    }
+                    break;
+
+                // CALL a16
+                case 0xCD:
+                    {
+                        ushort addr = (ushort)(RAM[PC++] + (RAM[PC++] << 8));
+                        RAM[--SP] = (byte)(PC >> 8);
+                        RAM[--SP] = (byte)(PC & 0x00FF);
+                        PC = addr;
+                        _cycleCount += 24;
+                    }
+                    break;
+
+                // CALL Z 16
+                case 0xCC:
+                    {
+                        ushort addr = (ushort)(RAM[PC++] + (RAM[PC++] << 8));
+                        if (FlagZ)
+                        {                            
+                            RAM[--SP] = (byte)(PC >> 8);
+                            RAM[--SP] = (byte)(PC & 0x00FF);
+                            PC = addr;
+                            _cycleCount += 24;
+                        }
+                        else
+                        {
+                            PC++;
+                            _cycleCount += 12;
+                        }
+                    }
+                    break;
+
+                // CALL C 16
+                case 0xDC:
+                    {
+                        ushort addr = (ushort)(RAM[PC++] + (RAM[PC++] << 8));
+                        if (FlagC)
+                        {
+                            RAM[--SP] = (byte)(PC >> 8);
+                            RAM[--SP] = (byte)(PC & 0x00FF);
+                            PC = addr;
+                            _cycleCount += 24;
+                        }
+                        else
+                        {
+                            PC++;
+                            _cycleCount += 12;
+                        }
+                    }
+                    break;
+
+                // CALL NZ 16
+                case 0xC4:
+                    {
+                        ushort addr = (ushort)(RAM[PC++] + (RAM[PC++] << 8));
+                        if (!FlagZ)
+                        {
+                            RAM[--SP] = (byte)(PC >> 8);
+                            RAM[--SP] = (byte)(PC & 0x00FF);
+                            PC = addr;
+                            _cycleCount += 24;
+                        }
+                        else
+                        {
+                            PC++;
+                            _cycleCount += 12;
+                        }
+                    }
+                    break;
+
+                // CALL NC 16
+                case 0xD4:
+                    {
+                        ushort addr = (ushort)(RAM[PC++] + (RAM[PC++] << 8));
+                        if (!FlagC)
+                        {
+                            RAM[--SP] = (byte)(PC >> 8);
+                            RAM[--SP] = (byte)(PC & 0x00FF);
+                            PC = addr;
+                            _cycleCount += 24;
+                        }
+                        else
+                        {
+                            PC++;
+                            _cycleCount += 12;
+                        }
+                    }
+                    break;
+
+                // RST
+                case 0xC7: case 0xD7: case 0xE7: case 0xF7:
+                    {
+                        byte addr = (byte)((opcode & 0xF0) - 0xC0);
+                        RAM[--SP] = (byte)(PC >> 8);
+                        RAM[--SP] = (byte)(PC & 0x00FF);
+                        PC = addr;
+                        _cycleCount += 16;
+                    }
+                    break;
+
+                // RST
+                case 0xCF: case 0xDF: case 0xEF: case 0xFF:
+                    {
+                        byte addr = (byte)(((opcode & 0xF0) - 0xC0) + 8);
+                        RAM[--SP] = (byte)(PC >> 8);
+                        RAM[--SP] = (byte)(PC & 0x00FF);
+                        PC = addr;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // DI
+                case 0xF3:
+                    {
+                        IME = 0;
+                        _cycleCount += 4;
+                        PC++;
+                    }
+                    break;
+
+                // EI
+                case 0xFB:
+                    {
+                        IME_enable = true;
+                        _cycleCount += 4;
+                        PC++;
+                    }
+                    break;
+
+                // RETI
+                case 0xD9:
+                    {
+                        ushort addr = (ushort)(RAM[SP++] + (RAM[SP++] << 8));
+                        PC = addr;
+                        _cycleCount += 4;
+                        IME = 1;
+                    }
+                    break;
+
+                // RET
+                case 0xC9:
+                    {
+                        ushort addr = (ushort)(RAM[SP++] + (RAM[SP++] << 8));
+                        PC = addr;
+                        _cycleCount += 4;
+                    }
+                    break;
 
                 default:
                     {
@@ -1218,7 +1575,7 @@ namespace GBCore
                     }
                     break;
             }
-        } 
+        }         
 
         private void Ret()
         {
