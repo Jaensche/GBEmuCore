@@ -220,11 +220,59 @@ namespace GBCore
         {
             switch (opcode)
             {
+                /********************************
+                 * Misc / Control 
+                 ********************************/
+
                 //NOP
                 case 0x00: 
                     PC++;
                     _cycleCount += 4;
                     break;
+
+                // STOP
+                case 0x10:
+                    {
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // HALT
+                case 0x76:
+                    {
+                        PC++;
+                    }
+                    break;
+
+                // DI
+                case 0xF3:
+                    {
+                        IME = 0;
+                        _cycleCount += 4;
+                        PC++;
+                    }
+                    break;
+
+                // EI
+                case 0xFB:
+                    {
+                        IME_enable = true;
+                        _cycleCount += 4;
+                        PC++;
+                    }
+                    break;
+
+                // PREFIX CB
+                case 0xCB:
+                    {
+
+                    }
+                    break;
+
+                /********************************
+                 * Load / Store 
+                 ********************************/
 
                 // LD Rx, Ry
                 case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x47: case 0x48: case 0x49: case 0x4A: case 0x4B: case 0x4C: case 0x4D: case 0x4F:
@@ -482,6 +530,10 @@ namespace GBCore
                     }
                     break;
 
+                /********************************
+                 * Stack
+                 ********************************/
+
                 // PUSH Rx
                 case 0xC5: case 0xD5: case 0xE5: case 0xF5:
                     {
@@ -505,6 +557,10 @@ namespace GBCore
                         _cycleCount += 12;
                     }
                     break;
+
+                /********************************
+                 * Arithmetic Logic
+                 ********************************/
 
                 // INC Rx
                 case 0x04: case 0x14: case 0x24:
@@ -654,6 +710,545 @@ namespace GBCore
                     }
                     break;
 
+                // CPL
+                case 0x2F:
+                    {
+                        FlagN = true;
+                        FlagH = true;
+
+                        REG[A] = (byte)~REG[A];
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // SCF
+                case 0x37:
+                    {
+                        FlagN = false;
+                        FlagH = false;
+                        FlagC = true;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // DAA
+                case 0x27:
+                    {
+                        // note: assumes a is a uint8_t and wraps from 0xff to 0
+                        if (!FlagN)
+                        {  // after an addition, adjust if (half-)carry occurred or if result is out of bounds
+                            if (FlagC || REG[A] > 0x99)
+                            {
+                                REG[A] += 0x60; FlagC = true;
+                            }
+                            if (FlagH || (REG[A] & 0x0F) > 0x09)
+                            {
+                                REG[A] += 0x06;
+                            }
+                        }
+                        else
+                        {  // after a subtraction, only adjust if (half-)carry occurred
+                            if (FlagC)
+                            {
+                                REG[A] -= 0x60;
+                            }
+                            if (FlagH)
+                            {
+                                REG[A] -= 0x06;
+                            }
+                        }
+                        // these flags are always updated
+                        FlagZ = (REG[A] == 0); // the usual z flag
+                        FlagH = false; // h flag is always cleared
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // ADD A, r8
+                case 0x80:
+                case 0x81:
+                case 0x82:
+                case 0x83:
+                case 0x84:
+                case 0x85:
+                case 0x87:
+                    {
+                        int reg = (opcode & 0x0F) - 8;
+                        FlagN = false;
+                        FlagH = IsHalfCarry(REG[A], REG[reg]);
+                        FlagC = REG[A] + REG[reg] > 0xFF;
+
+                        REG[A] += REG[reg];
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // ADD A, d8
+                case 0xC6:
+                    {
+                        byte value = RAM[PC++];
+                        FlagN = false;
+                        FlagH = IsHalfCarry(REG[A], value);
+                        FlagC = REG[A] + value > 0xFF;
+
+                        REG[A] += value;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // ADD SP, r8
+                case 0xE8:
+                    {
+                        sbyte value = (sbyte)RAM[PC++];
+                        FlagN = false;
+                        FlagH = IsHalfCarry(SP, (ushort)value);
+                        FlagC = value + value > 0xFF;
+
+                        SP += (ushort)value;
+                        FlagZ = false;
+
+                        PC++;
+                        _cycleCount += 16;
+                    }
+                    break;
+
+                // ADC A, r8
+                case 0x88:
+                case 0x89:
+                case 0x8A:
+                case 0x8B:
+                case 0x8C:
+                case 0x8D:
+                case 0x8F:
+                    {
+                        int reg = opcode & 0x0F;
+                        byte val = (byte)(REG[reg] + (FlagC ? 1 : 0));
+                        FlagN = false;
+                        FlagH = IsHalfCarry(REG[A], val);
+                        FlagC = REG[A] + val > 0xFF;
+
+                        REG[A] += val;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // ADC A, d8
+                case 0xCE:
+                    {
+                        byte val = (byte)(RAM[PC++] + (FlagC ? 1 : 0));
+                        FlagN = false;
+                        FlagH = IsHalfCarry(REG[A], val);
+                        FlagC = REG[A] + val > 0xFF;
+
+                        REG[A] += val;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // ADC A, (HL)
+                case 0x8E:
+                    {
+                        byte val = (byte)(RAM[HL] + (FlagC ? 1 : 0));
+                        FlagN = false;
+                        FlagH = IsHalfCarry(REG[A], val);
+                        FlagC = REG[A] + val > 0xFF;
+
+                        REG[A] += val;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 8;
+                    }
+                    break;
+
+                // ADD A, (HL)
+                case 0x86:
+                    {
+                        FlagN = false;
+                        FlagH = IsHalfCarry(REG[A], RAM[HL]);
+                        FlagC = REG[A] + RAM[HL] > 0xFF;
+
+                        REG[A] += RAM[HL];
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // SUB A, r8
+                case 0x90:
+                case 0x91:
+                case 0x92:
+                case 0x93:
+                case 0x94:
+                case 0x95:
+                case 0x97:
+                    {
+                        int reg = opcode & 0x0F;
+                        FlagN = true;
+                        FlagH = IsHalfCarry(REG[A], REG[reg]);
+                        FlagC = REG[A] - REG[reg] < 0;
+
+                        REG[A] -= REG[reg];
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // SUB A, d8
+                case 0xD6:
+                    {
+                        byte value = RAM[PC++];
+                        FlagN = true;
+                        FlagH = IsHalfCarry(REG[A], value);
+                        FlagC = REG[A] - value < 0;
+
+                        REG[A] -= value;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // SBC A, r8
+                case 0x98:
+                case 0x99:
+                case 0x9A:
+                case 0x9B:
+                case 0x9C:
+                case 0x9D:
+                case 0x9F:
+                    {
+                        int reg = opcode & 0x0F;
+                        byte val = (byte)(REG[reg] + (FlagC ? 1 : 0));
+                        FlagN = true;
+                        FlagH = IsHalfCarry(REG[A], val);
+                        FlagC = REG[A] - val < 0;
+
+                        REG[A] -= val;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // SBC A, d8
+                case 0xDE:
+                    {
+                        byte val = (byte)(RAM[PC++] + (FlagC ? 1 : 0));
+                        FlagN = true;
+                        FlagH = IsHalfCarry(REG[A], val);
+                        FlagC = REG[A] - val < 0;
+
+                        REG[A] -= val;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // SBC A, (HL)
+                case 0x9E:
+                    {
+                        byte val = (byte)(RAM[HL] + (FlagC ? 1 : 0));
+                        FlagN = true;
+                        FlagH = IsHalfCarry(REG[A], val);
+                        FlagC = REG[A] - val < 0;
+
+                        REG[A] -= val;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // SUB A, (HL)
+                case 0x96:
+                    {
+                        FlagN = true;
+                        FlagH = IsHalfCarry(REG[A], RAM[HL]);
+                        FlagC = REG[A] - RAM[HL] < 0;
+
+                        REG[A] -= RAM[HL];
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // AND A, r8
+                case 0xA0:
+                case 0xA1:
+                case 0xA2:
+                case 0xA3:
+                case 0xA4:
+                case 0xA5:
+                case 0xA7:
+                    {
+                        int reg = opcode & 0x0F;
+                        FlagN = false;
+                        FlagH = true;
+                        FlagC = false;
+
+                        REG[A] &= REG[reg];
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // AND A, d8
+                case 0xE6:
+                    {
+                        byte value = RAM[PC++];
+                        FlagN = false;
+                        FlagH = true;
+                        FlagC = false;
+
+                        REG[A] &= value;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // AND A, (HL)
+                case 0xA6:
+                    {
+                        FlagN = false;
+                        FlagH = true;
+                        FlagC = false;
+
+                        REG[A] &= RAM[HL];
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // OR A, r8
+                case 0xB0:
+                case 0xB1:
+                case 0xB2:
+                case 0xB3:
+                case 0xB4:
+                case 0xB5:
+                case 0xB7:
+                    {
+                        int reg = opcode & 0x0F;
+                        FlagN = false;
+                        FlagH = false;
+                        FlagC = false;
+
+                        REG[A] |= REG[reg];
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // OR A, d8
+                case 0xF6:
+                    {
+                        byte value = RAM[PC++];
+                        FlagN = false;
+                        FlagH = false;
+                        FlagC = false;
+
+                        REG[A] |= value;
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // OR A, (HL)
+                case 0xB6:
+                    {
+                        FlagN = false;
+                        FlagH = false;
+                        FlagC = false;
+
+                        REG[A] |= RAM[HL];
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // XOR A, r8
+                case 0xA8:
+                case 0xA9:
+                case 0xAA:
+                case 0xAB:
+                case 0xAC:
+                case 0xAD:
+                case 0xAF:
+                    {
+                        int reg = opcode & 0x0F;
+                        FlagN = false;
+                        FlagH = false;
+                        FlagC = false;
+
+                        REG[A] ^= REG[reg];
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // XOR A, r8
+                case 0xEE:
+                    {
+                        FlagN = false;
+                        FlagH = false;
+                        FlagC = false;
+
+                        REG[A] ^= RAM[PC++];
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // XOR A, (HL)
+                case 0xAE:
+                    {
+                        FlagN = false;
+                        FlagH = false;
+                        FlagC = false;
+
+                        REG[A] ^= RAM[HL];
+                        FlagZ = REG[A] == 0;
+
+                        PC++;
+                        _cycleCount += 8;
+                    }
+                    break;
+
+                // CP A, r8 
+                case 0xB8:
+                case 0xB9:
+                case 0xBA:
+                case 0xBB:
+                case 0xBC:
+                case 0xBD:
+                case 0xBF:
+                    {
+                        int reg = opcode & 0x0F;
+                        byte val = (byte)(REG[reg] + (FlagC ? 1 : 0));
+                        FlagN = true;
+                        FlagH = IsHalfCarry(REG[A], val);
+                        FlagC = REG[A] - val < 0;
+
+                        FlagZ = (REG[A] - val) == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // CP A, d8
+                case 0xFE:
+                    {
+                        byte val = (byte)(RAM[PC++] + (FlagC ? 1 : 0));
+                        FlagN = true;
+                        FlagH = IsHalfCarry(REG[A], val);
+                        FlagC = REG[A] - val < 0;
+
+                        FlagZ = (REG[A] - val) == 0;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // CP A, (HL)
+                case 0xBE:
+                    {
+                        byte val = (byte)(RAM[HL] + (FlagC ? 1 : 0));
+                        FlagN = true;
+                        FlagH = IsHalfCarry(REG[A], val);
+                        FlagC = REG[A] - val < 0;
+
+                        FlagZ = (REG[A] - val) == 0;
+
+                        PC++;
+                        _cycleCount += 8;
+                    }
+                    break;
+
+                // CCF
+                case 0x3F:
+                    {
+                        FlagN = false;
+                        FlagH = false;
+
+                        FlagC = !FlagC;
+
+                        PC++;
+                        _cycleCount += 4;
+                    }
+                    break;
+
+                // ADD HL, BC
+                case 0x09:
+                    AddHL(BC);
+                    break;
+
+                // ADD HL, BC
+                case 0x19:
+                    AddHL(DE);
+                    break;
+
+                // ADD HL, HL
+                case 0x29:
+                    AddHL(HL);
+                    break;
+
+                // ADD HL, SP
+                case 0x39:
+                    AddHL(SP);
+                    break;
+
+                /********************************
+                 * Rotation Shift Bit
+                 ********************************/
+
                 // RLC A
                 case 0x07:
                     {
@@ -722,38 +1317,9 @@ namespace GBCore
                     }
                     break;
 
-                // CPL
-                case 0x2F:
-                    {
-                        FlagN = true;
-                        FlagH = true;
-
-                        REG[A] = (byte)~REG[A];
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;
-
-                // SCF
-                case 0x37:
-                    {
-                        FlagN = false;
-                        FlagH = false;
-                        FlagC = true;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;
-
-                // STOP
-                case 0x10:
-                    {
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;
+                /********************************
+                 * Jumps Calls
+                 ********************************/
 
                 // JR NZ, d8
                 case 0x20:
@@ -827,476 +1393,7 @@ namespace GBCore
                         PC += (ushort)offset;
                         _cycleCount += 12;                        
                     }
-                    break;
-
-                // DAA
-                case 0x27:
-                    {
-                        // note: assumes a is a uint8_t and wraps from 0xff to 0
-                        if (!FlagN)
-                        {  // after an addition, adjust if (half-)carry occurred or if result is out of bounds
-                            if (FlagC || REG[A] > 0x99) 
-                            { 
-                                REG[A] += 0x60; FlagC = true; 
-                            }
-                            if (FlagH || (REG[A] & 0x0F) > 0x09)
-                            { 
-                                REG[A] += 0x06; 
-                            }
-                        }
-                        else
-                        {  // after a subtraction, only adjust if (half-)carry occurred
-                            if (FlagC) 
-                            {   
-                                REG[A] -= 0x60; 
-                            }
-                            if (FlagH) 
-                            { 
-                                REG[A] -= 0x06; 
-                            }
-                        }
-                        // these flags are always updated
-                        FlagZ = (REG[A] == 0); // the usual z flag
-                        FlagH = false; // h flag is always cleared
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;
-
-                // ADD A, r8
-                case 0x80: case 0x81: case 0x82: case 0x83: case 0x84: case 0x85: case 0x87:
-                    {
-                        int reg = (opcode & 0x0F) - 8;
-                        FlagN = false;
-                        FlagH = IsHalfCarry(REG[A], REG[reg]);
-                        FlagC = REG[A] + REG[reg] > 0xFF;
-
-                        REG[A] += REG[reg];
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;
-
-                // ADD A, d8
-                case 0xC6:
-                    {
-                        byte value = RAM[PC++];
-                        FlagN = false;
-                        FlagH = IsHalfCarry(REG[A], value);
-                        FlagC = REG[A] + value > 0xFF;
-
-                        REG[A] += value;
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;
-
-                // ADD SP, r8
-                case 0xE8:
-                    {
-                        sbyte value = (sbyte)RAM[PC++];
-                        FlagN = false;
-                        FlagH = IsHalfCarry(SP, (ushort)value);
-                        FlagC = value + value > 0xFF;
-
-                        SP += (ushort)value;
-                        FlagZ = false;
-
-                        PC++;
-                        _cycleCount += 16;
-                    }
-                    break;
-
-                // ADC A, r8
-                case 0x88: case 0x89: case 0x8A: case 0x8B: case 0x8C: case 0x8D: case 0x8F:
-                    {
-                        int reg = opcode & 0x0F;
-                        byte val = (byte)(REG[reg] + (FlagC ? 1 : 0));
-                        FlagN = false;
-                        FlagH = IsHalfCarry(REG[A], val);
-                        FlagC = REG[A] + val > 0xFF;
-
-                        REG[A] += val;
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;                        
-                    }
-                    break;       
-                    
-                // ADC A, d8
-                case 0xCE: 
-                    {
-                        byte val = (byte)(RAM[PC++] + (FlagC ? 1 : 0));
-                        FlagN = false;
-                        FlagH = IsHalfCarry(REG[A], val);
-                        FlagC = REG[A] + val > 0xFF;
-
-                        REG[A] += val;
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;                        
-                    }
-                    break; 
-
-                // ADC A, (HL)
-                case 0x8E:
-                    {
-                        byte val = (byte)(RAM[HL] + (FlagC ? 1 : 0));
-                        FlagN = false;
-                        FlagH = IsHalfCarry(REG[A], val);
-                        FlagC = REG[A] + val > 0xFF;
-
-                        REG[A] += val;
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 8;
-                    }
                     break;                
-
-                // ADD A, (HL)
-                case 0x86:
-                    {
-                        FlagN = false;
-                        FlagH = IsHalfCarry(REG[A], RAM[HL]);
-                        FlagC = REG[A] + RAM[HL] > 0xFF;
-
-                        REG[A] += RAM[HL];
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;                
-
-                // SUB A, r8
-                case 0x90: case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x97:
-                    {
-                        int reg = opcode & 0x0F;
-                        FlagN = true;
-                        FlagH = IsHalfCarry(REG[A], REG[reg]);
-                        FlagC = REG[A] - REG[reg] < 0;
-
-                        REG[A] -= REG[reg];
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;
-
-                // SUB A, d8
-                case 0xD6:
-                    {
-                        byte value = RAM[PC++];
-                        FlagN = true;
-                        FlagH = IsHalfCarry(REG[A], value);
-                        FlagC = REG[A] - value < 0;
-
-                        REG[A] -= value;
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;
-
-                // SBC A, r8
-                case 0x98: case 0x99: case 0x9A: case 0x9B: case 0x9C: case 0x9D: case 0x9F:
-                    {
-                        int reg = opcode & 0x0F;
-                        byte val = (byte)(REG[reg] + (FlagC ? 1 : 0));
-                        FlagN = true;
-                        FlagH = IsHalfCarry(REG[A], val);
-                        FlagC = REG[A] - val < 0;
-
-                        REG[A] -= val;
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;     
-                    
-                // SBC A, d8
-                case 0xDE: 
-                    {
-                        byte val = (byte)(RAM[PC++] + (FlagC ? 1 : 0));
-                        FlagN = true;
-                        FlagH = IsHalfCarry(REG[A], val);
-                        FlagC = REG[A] - val < 0;
-
-                        REG[A] -= val;
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;     
-
-                // SBC A, (HL)
-                case 0x9E:
-                    {
-                        byte val = (byte)(RAM[HL] + (FlagC ? 1 : 0));
-                        FlagN = true;
-                        FlagH = IsHalfCarry(REG[A], val);
-                        FlagC = REG[A] - val < 0;
-
-                        REG[A] -= val;
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;               
-
-                // SUB A, (HL)
-                case 0x96:
-                    {
-                        FlagN = true;
-                        FlagH = IsHalfCarry(REG[A], RAM[HL]);
-                        FlagC = REG[A] - RAM[HL] < 0;
-
-                        REG[A] -= RAM[HL];
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;
-
-                // AND A, r8
-                case 0xA0: case 0xA1: case 0xA2: case 0xA3: case 0xA4: case 0xA5: case 0xA7:
-                    {
-                        int reg = opcode & 0x0F;
-                        FlagN = false;
-                        FlagH = true;
-                        FlagC = false;
-
-                        REG[A] &= REG[reg];
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;  
-
-                // AND A, d8
-                case 0xE6: 
-                    {
-                        byte value = RAM[PC++];
-                        FlagN = false;
-                        FlagH = true;
-                        FlagC = false;
-
-                        REG[A] &= value;
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;               
-
-                // AND A, (HL)
-                case 0xA6:
-                    {
-                        FlagN = false;
-                        FlagH = true;
-                        FlagC = false;
-
-                        REG[A] &= RAM[HL];
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;
-
-                // OR A, r8
-                case 0xB0: case 0xB1: case 0xB2: case 0xB3: case 0xB4: case 0xB5: case 0xB7:
-                    {
-                        int reg = opcode & 0x0F;
-                        FlagN = false;
-                        FlagH = false;
-                        FlagC = false;
-
-                        REG[A] |= REG[reg];
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;  
-                    
-                // OR A, d8
-                case 0xF6: 
-                    {
-                        byte value = RAM[PC++];
-                        FlagN = false;
-                        FlagH = false;
-                        FlagC = false;
-
-                        REG[A] |= value;
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;
-
-                // OR A, (HL)
-                case 0xB6:
-                    {
-                        FlagN = false;
-                        FlagH = false;
-                        FlagC = false;
-
-                        REG[A] |= RAM[HL];
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;
-
-                // XOR A, r8
-                case 0xA8: case 0xA9: case 0xAA: case 0xAB: case 0xAC: case 0xAD: case 0xAF:
-                    {
-                        int reg = opcode & 0x0F;
-                        FlagN = false;
-                        FlagH = false;
-                        FlagC = false;
-
-                        REG[A] ^= REG[reg];
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;  
-                    
-                // XOR A, r8
-                case 0xEE:
-                    {
-                        FlagN = false;
-                        FlagH = false;
-                        FlagC = false;
-
-                        REG[A] ^= RAM[PC++];
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break; 
-
-                 // XOR A, (HL)
-                case 0xAE: 
-                    {
-                        FlagN = false;
-                        FlagH = false;
-                        FlagC = false;
-
-                        REG[A] ^= RAM[HL];
-                        FlagZ = REG[A] == 0;
-
-                        PC++;
-                        _cycleCount += 8;
-                    }
-                    break;
-
-                // CP A, r8 
-                case 0xB8: case 0xB9: case 0xBA: case 0xBB: case 0xBC: case 0xBD: case 0xBF:
-                    {
-                        int reg = opcode & 0x0F;
-                        byte val = (byte)(REG[reg] + (FlagC ? 1 : 0));
-                        FlagN = true;
-                        FlagH = IsHalfCarry(REG[A], val);
-                        FlagC = REG[A] - val < 0;
-
-                        FlagZ = (REG[A] - val) == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;   
-                    
-                // CP A, d8
-                case 0xFE:
-                    {
-                        byte val = (byte)(RAM[PC++] + (FlagC ? 1 : 0));
-                        FlagN = true;
-                        FlagH = IsHalfCarry(REG[A], val);
-                        FlagC = REG[A] - val < 0;
-
-                        FlagZ = (REG[A] - val) == 0;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;   
-
-                // CP A, (HL)
-                case 0xBE:
-                    {
-                        byte val = (byte)(RAM[HL] + (FlagC ? 1 : 0));
-                        FlagN = true;
-                        FlagH = IsHalfCarry(REG[A], val);
-                        FlagC = REG[A] - val < 0;
-
-                        FlagZ = (REG[A] - val) == 0;
-
-                        PC++;
-                        _cycleCount += 8;
-                    }
-                    break;
-
-                // CCF
-                case 0x3F:
-                    {
-                        FlagN = false;
-                        FlagH = false;
-
-                        FlagC = !FlagC;
-
-                        PC++;
-                        _cycleCount += 4;
-                    }
-                    break;
-
-                // HALT
-                case 0x76:
-                    {
-                        PC++;
-                    }
-                    break;
-
-                // ADD HL, BC
-                case 0x09:
-                    AddHL(BC);
-                    break;
-
-                // ADD HL, BC
-                case 0x19: 
-                    AddHL(DE);
-                    break;
-
-                // ADD HL, HL
-                case 0x29:
-                    AddHL(HL);
-                    break;
-
-                // ADD HL, SP
-                case 0x39:
-                    AddHL(SP);
-                    break;
 
                 // RET NZ
                 case 0xC0:
@@ -1530,25 +1627,7 @@ namespace GBCore
                         PC = addr;
                         _cycleCount += 4;
                     }
-                    break;
-
-                // DI
-                case 0xF3:
-                    {
-                        IME = 0;
-                        _cycleCount += 4;
-                        PC++;
-                    }
-                    break;
-
-                // EI
-                case 0xFB:
-                    {
-                        IME_enable = true;
-                        _cycleCount += 4;
-                        PC++;
-                    }
-                    break;
+                    break;                
 
                 // RETI
                 case 0xD9:
