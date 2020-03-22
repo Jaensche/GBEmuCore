@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
 
+[assembly: InternalsVisibleTo("GbCoreTest")]
 namespace GBCore
 {
     /*
@@ -44,10 +46,10 @@ namespace GBCore
         private const int A = 7;
         private readonly byte[] REG = new byte[8];
 
-        private bool FlagZ;
-        private bool FlagN;
-        private bool FlagH;
-        private bool FlagC;
+        internal bool FlagZ;
+        internal bool FlagN;
+        internal bool FlagH;
+        internal bool FlagC;
 
         public bool IsHalfCarry(byte a, byte b)
         {
@@ -110,8 +112,8 @@ namespace GBCore
             }
         }
 
-        public byte[] RAM = new byte[8196];
-        public byte[] VRAM = new byte[8196];       
+        public byte[] RAM = new byte[0xFFFF];
+        public byte[] VRAM = new byte[0xFFFF];       
 
         public ushort I;
         public ushort PC;
@@ -178,7 +180,6 @@ namespace GBCore
             RAM[0xFF49] = 0xFF;
             RAM[0xFF4A] = 0x00;
             RAM[0xFF4B] = 0x00;
-            RAM[0xFFFF] = 0x00;
 
             // Clear registers V0-VF
             for (int i = 0; i < REG.Length; i++)
@@ -213,6 +214,130 @@ namespace GBCore
             for (int i = 0; i < programCode.Length; i++)
             {
                 RAM[PROGMEMSTART + i] = programCode[i];
+            }
+        }
+
+        public enum Direction
+        {
+            Left,
+            Right
+        }
+
+        internal byte Rot(byte input, bool carry, Direction direction)
+        {
+            bool newCarry;
+            byte result;
+
+            if (direction == Direction.Left)
+            {
+                newCarry = (input & 0b10000000) > 0;
+                result = (byte)(input << 1);
+            }    
+            else
+            {
+                newCarry = (input & 0b00000001) > 0;
+                result = (byte)(input >> 1);
+            }
+
+            if (carry)
+            {
+                if (direction == Direction.Left)
+                {
+                    result += (byte)(newCarry ? 1 : 0);
+                }
+                else
+                {
+                    result += (byte)(newCarry ? 0b10000000 : 0);
+                }                              
+            }
+            else
+            {
+                if (direction == Direction.Left)
+                {
+                    result += (byte)(FlagC ? 1 : 0);
+                }
+                else
+                {
+                    result += (byte)(FlagC ? 0b10000000 : 0);
+                }
+            }
+
+            FlagC = newCarry;
+            FlagN = false;
+            FlagH = false;
+            FlagZ = result == 0;
+
+            return result;
+        }
+
+        private void DecodeExectueCB(byte opcode)
+        {
+            switch (opcode)
+            {
+                // RLC r
+                case 0x00: case 0x01: case 0x02: case 0x03: case 0x04: case 0x05: case 0x07:
+                    {
+                        int reg = opcode & 0x0F;
+
+                        REG[reg] = Rot(REG[reg], true, Direction.Left);
+
+                        PC++;
+                        _cycleCount += 8;                        
+                    }
+                    break;
+
+                // RRC r
+                case 0x08: case 0x09: case 0x0A: case 0x0B: case 0x0C: case 0x0D: case 0x0F:
+                    {
+                        int reg = opcode & 0x0F;
+
+                        REG[reg] = Rot(REG[reg], true, Direction.Right);
+
+                        PC++;
+                        _cycleCount += 8;                        
+                    }
+                    break;
+
+                // RL r
+                case 0x10: case 0x11: case 0x12: case 0x13: case 0x14: case 0x15: case 0x17:
+                    {
+                        int reg = opcode & 0x0F;
+
+                        REG[reg] = Rot(REG[reg], false, Direction.Left);
+
+                        PC++;
+                        _cycleCount += 8;                        
+                    }
+                    break;
+
+                // RR r
+                 case 0x18: case 0x19: case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1F:
+                    {
+                        int reg = opcode & 0x0F;
+
+                        REG[reg] = Rot(REG[reg], false, Direction.Right);
+
+                        PC++;
+                        _cycleCount += 8;                        
+                    }
+                    break;
+
+                // RLC (HL)
+                case 0x06:
+                    {
+                        bool newCarry = (RAM[HL] & 0b10000000) > 0;
+                        RAM[HL] = (byte)(RAM[HL] << 1);
+                        RAM[HL] += (byte)(FlagC ? 1 : 0);
+                        FlagC = newCarry;
+
+                        FlagN = false;
+                        FlagH = false;
+                        FlagZ = RAM[HL] == 0;
+
+                        PC++;
+                        _cycleCount += 16;                        
+                    }
+                    break;                
             }
         }
 
@@ -266,7 +391,8 @@ namespace GBCore
                 // PREFIX CB
                 case 0xCB:
                     {
-
+                        PC++;
+                        DecodeExectueCB(opcode);
                     }
                     break;
 
@@ -895,13 +1021,7 @@ namespace GBCore
                     break;
 
                 // SUB A, r8
-                case 0x90:
-                case 0x91:
-                case 0x92:
-                case 0x93:
-                case 0x94:
-                case 0x95:
-                case 0x97:
+                case 0x90: case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x97:
                     {
                         int reg = opcode & 0x0F;
                         FlagN = true;
