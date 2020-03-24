@@ -1,4 +1,4 @@
-﻿using System;
+﻿using System.IO;
 
 namespace GBCore
 {
@@ -6,10 +6,14 @@ namespace GBCore
     {
         public static void Main(string[] args)
         {
-            byte a = 255;
-            byte b = 1;
+            CPU cpu = new CPU(10);
 
-            Console.WriteLine(a + b > 0xFF);
+            cpu.Load(File.ReadAllBytes("R:\\DEV\\GBEmuCore\\blargg\\cpu_instrs\\individual\\06-ld r,r.gb"));
+            
+            while(true)
+            {
+                cpu.Cycle();
+            }
         }
     }
 }
