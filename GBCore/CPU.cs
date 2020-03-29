@@ -42,6 +42,15 @@ namespace GBCore
         C = 16
     }
 
+    public enum IrqFlags : byte
+    {
+        VBlank = 1,
+        LcdStat = 2,
+        Timer = 4,
+        Serial = 8,
+        Joypad = 16
+    }
+
 
     public class CPU
     {
@@ -143,8 +152,7 @@ namespace GBCore
         public ushort I;
         public ushort PC;
 
-        public byte IME;
-        public bool IME_enable;
+        public bool IME;
 
         public ushort[] Stack = new ushort[32];
         public ushort SP;
@@ -195,52 +203,101 @@ namespace GBCore
             PC = PROGMEMSTART;     // Program counter starts at 0x200
             I = 0;          // Reset index register
             SP = 0xFFFE;         // Reset stack pointer
-            HL = 0x000D;
-            DE = 0xFF56;
+            HL = 0x0000;
+            DE = 0x0000;
             BC = 0x0000;
-            AF = 0x1180;
-            IME = 0;
+            AF = 0x0000;
+            IME = true;
 
-            //RAM[0xFF05] = 0x00;
-            //RAM[0xFF06] = 0x00;
-            //RAM[0xFF07] = 0x00;
-            //RAM[0xFF10] = 0x80;
-            //RAM[0xFF11] = 0xBF;
-            //RAM[0xFF12] = 0xF3;
-            //RAM[0xFF14] = 0xBF;
-            //RAM[0xFF16] = 0x3F;
-            //RAM[0xFF17] = 0x00;
-            //RAM[0xFF19] = 0xBF;
-            //RAM[0xFF1A] = 0x7F;
-            //RAM[0xFF1B] = 0xFF;
-            //RAM[0xFF1C] = 0x9F;
-            //RAM[0xFF1E] = 0xBF;
-            //RAM[0xFF20] = 0xFF;
-            //RAM[0xFF21] = 0x00;
-            //RAM[0xFF22] = 0x00;
-            //RAM[0xFF23] = 0xBF;
-            //RAM[0xFF24] = 0x77;
-            //RAM[0xFF25] = 0xF3;
-            //RAM[0xFF26] = 0xF1;
-            //RAM[0xFF40] = 0x91;
-            //RAM[0xFF42] = 0x00;
-            //RAM[0xFF43] = 0x00;
-            //RAM[0xFF45] = 0x00;
-            //RAM[0xFF47] = 0xFC;
-            //RAM[0xFF48] = 0xFF;
-            //RAM[0xFF49] = 0xFF;
-            //RAM[0xFF4A] = 0x00;
-            //RAM[0xFF4B] = 0x00;
-            
+            RAM[0xFF05] = 0x00;
+            RAM[0xFF06] = 0x00;
+            RAM[0xFF07] = 0x00;
+            RAM[0xFF10] = 0x80;
+            RAM[0xFF11] = 0xBF;
+            RAM[0xFF12] = 0xF3;
+            RAM[0xFF14] = 0xBF;
+            RAM[0xFF16] = 0x3F;
+            RAM[0xFF17] = 0x00;
+            RAM[0xFF19] = 0xBF;
+            RAM[0xFF1A] = 0x7F;
+            RAM[0xFF1B] = 0xFF;
+            RAM[0xFF1C] = 0x9F;
+            RAM[0xFF1E] = 0xBF;
+            RAM[0xFF20] = 0xFF;
+            RAM[0xFF21] = 0x00;
+            RAM[0xFF22] = 0x00;
+            RAM[0xFF23] = 0xBF;
+            RAM[0xFF24] = 0x77;
+            RAM[0xFF25] = 0xF3;
+            RAM[0xFF26] = 0xF1;
+            RAM[0xFF40] = 0x91;
+            RAM[0xFF42] = 0x00;
+            RAM[0xFF43] = 0x00;
+            RAM[0xFF45] = 0x00;
+            RAM[0xFF47] = 0xFC;
+            RAM[0xFF48] = 0xFF;
+            RAM[0xFF49] = 0xFF;
+            RAM[0xFF4A] = 0x00;
+            RAM[0xFF4B] = 0x00;
+
             _cycleCount = 0;
             _rand = new Random();
             RedrawFlag = false;
+        }
+
+        private void IrqVector(IrqFlags flag)
+        {
+            byte IrqFlag = ReadMem(0xFF0F);
+            byte IrqEnable = ReadMem(0xFFFF);
+
+            if (IME && ((IrqFlags)IrqFlag).HasFlag(flag) && ((IrqFlags)IrqEnable).HasFlag(flag))
+            {
+                IME = false;
+                WriteMem(--SP, (byte)(PC >> 8));
+                WriteMem(--SP, (byte)(PC & 0x00FF));
+                WriteMem(0xFF0F, (byte)(IrqFlag & (byte)~flag));
+
+                switch (flag)
+                {
+                    case IrqFlags.VBlank:
+                        PC = 0x0040;
+                        break;
+
+                    case IrqFlags.LcdStat:
+                        PC = 0x0048;
+                        break;
+
+                    case IrqFlags.Timer:
+                        PC = 0x0050;
+                        break;
+
+                    case IrqFlags.Serial:
+                        PC = 0x0058;
+                        break;
+
+                    case IrqFlags.Joypad:
+                        PC = 0x0060;
+                        break;
+                }
+            }
+        }
+
+        public void IRQ()
+        {            
+            IrqVector(IrqFlags.VBlank);
+            IrqVector(IrqFlags.LcdStat);
+            IrqVector(IrqFlags.Timer);
+            IrqVector(IrqFlags.Serial);
+            IrqVector(IrqFlags.Joypad);
         }
 
         public bool Cycle()
         {
             // reset redraw
             RedrawFlag = false;
+
+            // handle interrupts
+            IRQ();
 
             // Load Opcode
             byte opcode = RAM[PC];
@@ -626,7 +683,7 @@ namespace GBCore
                 // DI
                 case 0xF3:
                     {
-                        IME = 0;
+                        IME = false;
                         _cycleCount += 4;
                         PC++;
                     }
@@ -635,7 +692,7 @@ namespace GBCore
                 // EI
                 case 0xFB:
                     {
-                        IME_enable = true;
+                        IME = true;
                         _cycleCount += 4;
                         PC++;
                     }
@@ -1955,7 +2012,7 @@ namespace GBCore
                         ushort addr = (ushort)(ReadMem(SP++) + (ReadMem(SP++) << 8));
                         PC = addr;
                         _cycleCount += 4;
-                        IME = 1;
+                        IME = true;
                     }
                     break;
 
