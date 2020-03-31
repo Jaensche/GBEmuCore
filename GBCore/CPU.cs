@@ -68,32 +68,21 @@ namespace GBCore
 
         private string memTrace;
 
-        public void SetFlag(Flags flag, bool input)
-        {
-            if(input)
-            {
-                REG[F] |= (byte)flag;
-            }
-            else
-            {
-                REG[F] &= (byte)~flag;
-            }            
-        }
+        public byte[] RAM = new byte[0x10000];
+        public byte[] VRAM = new byte[0x10000];
 
-        public bool IsSet(Flags flag) 
-        {
-            return ((Flags)REG[F]).HasFlag(flag);
-        }
-        
-        public bool IsHalfCarry(byte a, byte b)
-        {
-            return (((a & 0x0F) + (b & 0x0F)) & 0x10) == 0x10;
-        }
+        public ushort PC;
 
-        public bool IsHalfCarry(ushort a, ushort b)
-        {
-            return (((a & 0x00FF) + (b & 0x00FF)) & 0x0100) == 0x0100;
-        }
+        public bool IME;
+
+        public ushort[] Stack = new ushort[32];
+        public ushort SP;
+
+        public bool RedrawFlag;
+
+        public long _cycleCount;
+
+        private OpcodesLookup opcodesLookup = new OpcodesLookup();
 
         private ushort AF
         {
@@ -146,31 +135,35 @@ namespace GBCore
             }
         }
 
-        public byte[] RAM = new byte[0x10000];
-        public byte[] VRAM = new byte[0x10000];       
+        public void SetFlag(Flags flag, bool input)
+        {
+            if(input)
+            {
+                REG[F] |= (byte)flag;
+            }
+            else
+            {
+                REG[F] &= (byte)~flag;
+            }            
+        }
 
-        public ushort I;
-        public ushort PC;
-
-        public bool IME;
-
-        public ushort[] Stack = new ushort[32];
-        public ushort SP;
+        public bool IsSet(Flags flag) 
+        {
+            return ((Flags)REG[F]).HasFlag(flag);
+        }
         
-        public bool RedrawFlag;    
-        
-        private int _cyclesPer60Hz;
+        public bool IsHalfCarry(byte a, byte b)
+        {
+            return (((a & 0x0F) + (b & 0x0F)) & 0x10) == 0x10;
+        }
 
-        private Random _rand;
+        public bool IsHalfCarry(ushort a, ushort b)
+        {
+            return (((a & 0x00FF) + (b & 0x00FF)) & 0x0100) == 0x0100;
+        }       
 
-        private long _cycleCount;
-
-        private OpcodesLookup opcodesLookup = new OpcodesLookup();
-
-        public CPU(int cyclesPer60Hz)
-        {           
-            _cyclesPer60Hz = cyclesPer60Hz;
-
+        public CPU()
+        {
             Reset();
         }
 
@@ -200,9 +193,8 @@ namespace GBCore
 
         public void Reset()
         {
-            PC = PROGMEMSTART;     // Program counter starts at 0x200
-            I = 0;          // Reset index register
-            SP = 0xFFFE;         // Reset stack pointer
+            PC = PROGMEMSTART;   
+            SP = 0xFFFE;         
             HL = 0x0000;
             DE = 0x0000;
             BC = 0x0000;
@@ -241,7 +233,6 @@ namespace GBCore
             RAM[0xFF4B] = 0x00;
 
             _cycleCount = 0;
-            _rand = new Random();
             RedrawFlag = false;
         }
 
@@ -976,8 +967,8 @@ namespace GBCore
                     {
                         byte x = (byte)(opcode & 0b00110000 >> 3);
 
-                        WriteMem(SP--, REG[x]);
-                        WriteMem(SP--, REG[x + 1]);
+                        WriteMem(--SP, REG[x]);
+                        WriteMem(--SP, REG[x + 1]);
                         PC++;
                         _cycleCount += 16;
                     }
@@ -988,8 +979,8 @@ namespace GBCore
                     {
                         byte x = (byte)(opcode & 0b00110000 >> 3);
 
-                        REG[x] = ReadMem(SP++);
                         REG[x + 1] = ReadMem(SP++);
+                        REG[x] = ReadMem(SP++);
                         PC++;
                         _cycleCount += 12;
                     }
@@ -1901,7 +1892,8 @@ namespace GBCore
                 case 0xCD:
                     {
                         ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
-                        WriteMem(--SP, (byte)(PC >> 8));
+                        PC++;
+                        WriteMem(SP, (byte)(PC >> 8));
                         WriteMem(--SP, (byte)(PC & 0x00FF));
                         PC = addr;
                         _cycleCount += 24;
@@ -1913,7 +1905,8 @@ namespace GBCore
                     {
                         ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
                         if (IsSet(Flags.Z))
-                        {                            
+                        {
+                            PC++;
                             WriteMem(--SP, (byte)(PC >> 8));
                             WriteMem(--SP, (byte)(PC & 0x00FF));
                             PC = addr;
@@ -1933,6 +1926,7 @@ namespace GBCore
                         ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
                         if (IsSet(Flags.C))
                         {
+                            PC++;
                             WriteMem(--SP, (byte)(PC >> 8));
                             WriteMem(--SP, (byte)(PC & 0x00FF));
                             PC = addr;
@@ -1952,6 +1946,7 @@ namespace GBCore
                         ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
                         if (!IsSet(Flags.Z))
                         {
+                            PC++;
                             WriteMem(--SP, (byte)(PC >> 8));
                             WriteMem(--SP, (byte)(PC & 0x00FF));
                             PC = addr;
@@ -1971,6 +1966,7 @@ namespace GBCore
                         ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
                         if (!IsSet(Flags.C))
                         {
+                            PC++;
                             WriteMem(--SP, (byte)(PC >> 8));
                             WriteMem(--SP, (byte)(PC & 0x00FF));
                             PC = addr;
@@ -2009,7 +2005,7 @@ namespace GBCore
                 // RETI
                 case 0xD9:
                     {
-                        ushort addr = (ushort)(ReadMem(SP++) + (ReadMem(SP++) << 8));
+                        ushort addr = (ushort)(ReadMem(SP) + (ReadMem(++SP) << 8));
                         PC = addr;
                         _cycleCount += 4;
                         IME = true;
@@ -2019,7 +2015,7 @@ namespace GBCore
                 // RET
                 case 0xC9:
                     {
-                        ushort addr = (ushort)(ReadMem(SP++) + (ReadMem(SP++) << 8));
+                        ushort addr = (ushort)(ReadMem(SP) + (ReadMem(++SP) << 8));
                         PC = addr;
                         _cycleCount += 4;
                     }
