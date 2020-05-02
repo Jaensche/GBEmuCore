@@ -51,7 +51,6 @@ namespace GBCore
         Joypad = 16
     }
 
-
     public class CPU
     {
         private const ushort PROGMEMSTART = 0x100;
@@ -181,13 +180,13 @@ namespace GBCore
 
             memTrace += ($"{addr:X4} <- {data:X2} ");
 
-            if (addr == 0xFF02 && data == 0x81)
+            if (addr == 0xFF01) //&& data == 0x81)
             {
-                Console.WriteLine("Serial Data: " + ReadMem(0xFF01));
-            }
-            else if(addr == 0xFF01)
-            {
-                Console.Write("Serial Data: " + data);
+                memTrace += $" [Serial: {data:X2}] ";
+
+                //byte irqFlag = ReadMem(0xFF0F);
+                //irqFlag |= (byte)IrqFlags.Serial;
+                //WriteMem(0xFF0F, irqFlag);
             }
         }
 
@@ -200,6 +199,7 @@ namespace GBCore
             BC = 0x0000;
             AF = 0x0000;
             IME = true;
+
 
             RAM[0xFF05] = 0x00;
             RAM[0xFF06] = 0x00;
@@ -231,6 +231,12 @@ namespace GBCore
             RAM[0xFF49] = 0xFF;
             RAM[0xFF4A] = 0x00;
             RAM[0xFF4B] = 0x00;
+            
+            RAM[0xFFFF] |= (byte)IrqFlags.Joypad;
+            RAM[0xFFFF] |= (byte)IrqFlags.LcdStat;
+            RAM[0xFFFF] |= (byte)IrqFlags.Serial;
+            RAM[0xFFFF] |= (byte)IrqFlags.Timer;
+            RAM[0xFFFF] |= (byte)IrqFlags.VBlank;
 
             _cycleCount = 0;
             RedrawFlag = false;
@@ -294,24 +300,23 @@ namespace GBCore
             byte opcode = RAM[PC];
 
             memTrace = string.Empty;
-            Console.WriteLine(string.Empty);
-            Console.Write("{0:X4}: ", PC);            
-            Console.Write("{0:X2} {1,3}\t", opcode, opcodesLookup.NonPrefix[opcode]);                  
+            
+            Console.Write("{0:X4} ", PC);            
+            Console.Write("{0:X2} {1,3} ", opcode, opcodesLookup.NonPrefix[opcode]);                  
 
             // Decode Opcode
             // Execute Opcode
             DecodeExecute(opcode);
             
             Console.Write("A={0:X2} ", REG[A]);
-            Console.Write("B={0:X2} ", REG[B]);
-            Console.Write("C={0:X2} ", REG[C]);
-            Console.Write("D={0:X2} ", REG[D]);
-            Console.Write("E={0:X2} ", REG[E]);
-            Console.Write("F={0:X2} ", REG[F]);
-            Console.Write("H={0:X2} ", REG[H]);
-            Console.Write("L={0:X2} ", REG[L]);            
-            Console.Write("SP={0:X2} ", SP);
+            Console.Write("F={0} ", Convert.ToString((REG[F] & 0xF0) >> 4, 2).PadLeft(4, '0')); 
+            Console.Write("BC={0:X2}{1:X2} ", REG[B], REG[C]);
+            Console.Write("DE={0:X2}{1:X2} ", REG[D], REG[E]);
+            Console.Write("HL={0:X2}{1:X2} ", REG[H], REG[L]);
+            Console.Write("SP={0:X2} ", SP);            
+            Console.Write("CY={0:D8} ", _cycleCount);
             Console.Write(memTrace);
+            Console.WriteLine(string.Empty);
 
             //Thread.Sleep(100);
 
@@ -965,7 +970,7 @@ namespace GBCore
                 // PUSH Rx
                 case 0xC5: case 0xD5: case 0xE5: case 0xF5:
                     {
-                        byte x = (byte)(opcode & 0b00110000 >> 3);
+                        byte x = (byte)((opcode & 0b00110000) >> 3);
 
                         WriteMem(--SP, REG[x]);
                         WriteMem(--SP, REG[x + 1]);
@@ -977,7 +982,7 @@ namespace GBCore
                 // POP Rx
                 case 0xC1: case 0xD1: case 0xE1: case 0xF1:
                     {
-                        byte x = (byte)(opcode & 0b00110000 >> 3);
+                        byte x = (byte)((opcode & 0b00110000) >> 3);
 
                         REG[x + 1] = ReadMem(SP++);
                         REG[x] = ReadMem(SP++);
@@ -2025,14 +2030,13 @@ namespace GBCore
                     {
                         throw new Exception(opcode.ToString());                            
                     }
-                    break;
             }
         }         
 
         private void Ret()
         {
             PC = (ushort)((ReadMem((ushort)(SP + 1)) << 8) + ReadMem(SP));
-            SP += 2;
+            SP += 1;
             _cycleCount += 16;
         }
         
