@@ -83,7 +83,12 @@ namespace GBCore
 
         private OpcodesLookup opcodesLookup = new OpcodesLookup();
 
-        private ushort AF
+        public CPU()
+        {
+            Reset();
+        }
+
+        public ushort AF
         {
             get
             {
@@ -96,7 +101,7 @@ namespace GBCore
             }
         }
 
-        private ushort BC
+        public ushort BC
         {
             get
             {
@@ -109,7 +114,7 @@ namespace GBCore
             }
         }
 
-        private ushort DE
+        public ushort DE
         {
             get
             {
@@ -121,7 +126,7 @@ namespace GBCore
                 REG[D] = (byte)((value & 0xFF00) >> 8);
             }
         }
-        private ushort HL
+        public ushort HL
         {
             get
             {
@@ -134,7 +139,7 @@ namespace GBCore
             }
         }
 
-        public void SetFlag(Flags flag, bool input)
+        private void SetFlag(Flags flag, bool input)
         {
             if(input)
             {
@@ -150,23 +155,18 @@ namespace GBCore
         {
             return ((Flags)REG[F]).HasFlag(flag);
         }
-        
-        public bool IsHalfCarry(byte a, byte b)
+
+        private bool IsHalfCarry(byte a, byte b)
         {
             return (((a & 0x0F) + (b & 0x0F)) & 0x10) == 0x10;
         }
 
-        public bool IsHalfCarry(ushort a, ushort b)
+        private bool IsHalfCarry(ushort a, ushort b)
         {
             return (((a & 0x00FF) + (b & 0x00FF)) & 0x0100) == 0x0100;
-        }       
-
-        public CPU()
-        {
-            Reset();
         }
 
-        public byte ReadMem(ushort addr)
+        private byte ReadMem(ushort addr)
         {
             byte data = RAM[addr];
             memTrace += ($"{addr:X4} -> {data:X2} ");
@@ -174,7 +174,7 @@ namespace GBCore
             return data;   
         }
 
-        public void WriteMem(ushort addr, byte data)
+        private void WriteMem(ushort addr, byte data)
         {
             RAM[addr] = data;
 
@@ -193,13 +193,14 @@ namespace GBCore
         public void Reset()
         {
             PC = PROGMEMSTART;   
-            SP = 0xFFFE;         
-            HL = 0x0000;
-            DE = 0x0000;
-            BC = 0x0000;
-            AF = 0x0000;
-            IME = true;
+            
+            AF = 0x0190;
+            BC = 0x0013;
+            DE = 0x00D8;
+            HL = 0x014D;
+            SP = 0xFFFE;
 
+            IME = true;
 
             RAM[0xFF05] = 0x00;
             RAM[0xFF06] = 0x00;
@@ -301,22 +302,38 @@ namespace GBCore
 
             memTrace = string.Empty;
             
-            Console.Write("{0:X4} ", PC);            
-            Console.Write("{0:X2} {1,3} ", opcode, opcodesLookup.NonPrefix[opcode]);                  
+            Console.Write("{0:X4}:  ", PC);            
+            Console.Write("{0:X2} {1,10} ", opcode, opcodesLookup.NonPrefix[opcode]);
+
+            Console.Write("A:{0:x2} ", REG[A]);
+            Console.Write("B:{0:x2} ", REG[B]);
+            Console.Write("C:{0:x2} ", REG[C]);
+            Console.Write("D:{0:x2} ", REG[D]);
+            Console.Write("E:{0:x2} ", REG[E]);
+            Console.Write("F:{0:x2} ", REG[F]);
+            Console.Write("H:{0:x2} ", REG[H]);
+            Console.Write("L:{0:x2} ", REG[L]);
+            Console.Write("LY:99 ");
+            Console.Write("SP={0:x2}  ", SP);
+            Console.Write("CY={0:d8} ", _cycleCount);
+            Console.Write(memTrace);
+            Console.WriteLine(string.Empty);
 
             // Decode Opcode
             // Execute Opcode
             DecodeExecute(opcode);
+
+            //Console.Write("A={0:X2} ", REG[A]);
+            //Console.Write("F={0} ", Convert.ToString((REG[F] & 0xF0) >> 4, 2).PadLeft(4, '0')); 
+            //Console.Write("BC={0:X2}{1:X2} ", REG[B], REG[C]);
+            //Console.Write("DE={0:X2}{1:X2} ", REG[D], REG[E]);
+            //Console.Write("HL={0:X2}{1:X2} ", REG[H], REG[L]);
+            //Console.Write("SP={0:X2} ", SP);            
+            //Console.Write("CY={0:D8} ", _cycleCount);
+            //Console.Write(memTrace);
+            //Console.WriteLine(string.Empty);
+
             
-            Console.Write("A={0:X2} ", REG[A]);
-            Console.Write("F={0} ", Convert.ToString((REG[F] & 0xF0) >> 4, 2).PadLeft(4, '0')); 
-            Console.Write("BC={0:X2}{1:X2} ", REG[B], REG[C]);
-            Console.Write("DE={0:X2}{1:X2} ", REG[D], REG[E]);
-            Console.Write("HL={0:X2}{1:X2} ", REG[H], REG[L]);
-            Console.Write("SP={0:X2} ", SP);            
-            Console.Write("CY={0:D8} ", _cycleCount);
-            Console.Write(memTrace);
-            Console.WriteLine(string.Empty);
 
             //Thread.Sleep(100);
 
@@ -338,7 +355,7 @@ namespace GBCore
                 // RLC r
                 case 0x00: case 0x01: case 0x02: case 0x03: case 0x04: case 0x05: case 0x07:
                     {
-                        int reg = opcode & 0x0F;
+                        int reg = opcode & 0b00000111;
 
                         REG[reg] = APU.ROT(REG[reg], ref REG[F], true, APU.Direction.Left);
 
@@ -350,7 +367,7 @@ namespace GBCore
                 // RRC r
                 case 0x08: case 0x09: case 0x0A: case 0x0B: case 0x0C: case 0x0D: case 0x0F:
                     {
-                        int reg = (opcode & 0x0F) - 8;
+                        int reg = (opcode & 0b00000111) - 8;
 
                         REG[reg] = APU.ROT(REG[reg], ref REG[F], true, APU.Direction.Right);
 
@@ -362,7 +379,7 @@ namespace GBCore
                 // RL r
                 case 0x10: case 0x11: case 0x12: case 0x13: case 0x14: case 0x15: case 0x17:
                     {
-                        int reg = opcode & 0x0F;
+                        int reg = opcode & 0b00000111;
 
                         REG[reg] = APU.ROT(REG[reg], ref REG[F], false, APU.Direction.Left);
 
@@ -374,7 +391,7 @@ namespace GBCore
                 // RR r
                  case 0x18: case 0x19: case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1F:
                     {
-                        int reg = (opcode & 0x0F) - 8;
+                        int reg = (opcode & 0b00000111) - 8;
 
                         REG[reg] = APU.ROT(REG[reg], ref REG[F], false, APU.Direction.Right);
 
@@ -427,7 +444,7 @@ namespace GBCore
                 // SLA r
                 case 0x20: case 0x21: case 0x22: case 0x23: case 0x24: case 0x25: case 0x27:
                     {
-                        int reg = opcode & 0x0F;
+                        int reg = opcode & 0b00000111;
 
                         SetFlag(Flags.C, (REG[reg] & 0b10000000) > 0);
                         REG[reg] = (byte)(REG[reg] << 1);
@@ -444,7 +461,7 @@ namespace GBCore
                 // SRA r
                 case 0x28: case 0x29: case 0x2A: case 0x2B: case 0x2C: case 0x2D: case 0x2F:
                     {
-                        int reg = (opcode & 0x0F) - 8;
+                        int reg = (opcode & 0b00000111) - 8;
 
                         SetFlag(Flags.C, (REG[reg] & 0b00000001) > 0);
                         REG[reg] = (byte)((REG[reg] >> 1) | 0x80);
@@ -493,7 +510,7 @@ namespace GBCore
                 // SWAP r
                 case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x35: case 0x37:
                     {
-                        int reg = opcode & 0x0F;
+                        int reg = opcode & 0b00000111;
 
                         REG[reg] = APU.SWP(REG[reg]);
 
@@ -510,7 +527,7 @@ namespace GBCore
                 // SRL r
                 case 0x38: case 0x39: case 0x3A: case 0x3B: case 0x3C: case 0x3D: case 0x3F:
                     {
-                        int reg = (opcode & 0x0F) - 8;
+                        int reg = (opcode & 0b00000111) - 8;
 
                         SetFlag(Flags.C, (REG[reg] & 0b00000001) > 0);
 
@@ -551,7 +568,7 @@ namespace GBCore
                 case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75: case 0x77:
                 case 0x78: case 0x79: case 0x7A: case 0x7B: case 0x7C: case 0x7D: case 0x7F:
                     {
-                        int reg = opcode & 0x0F;
+                        int reg = opcode & 0b00000111;
                         byte x = (byte)((opcode & 0b00111000) >> 3);
 
                         SetFlag(Flags.Z, (REG[reg] & (0b00000001 << x)) == 0);
@@ -587,7 +604,7 @@ namespace GBCore
                 case 0xB0: case 0xB1: case 0xB2: case 0xB3: case 0xB4: case 0xB5: case 0xB7:
                 case 0xB8: case 0xB9: case 0xBA: case 0xBB: case 0xBC: case 0xBD: case 0xBF:
                     {
-                        int reg = opcode & 0x0F;
+                        int reg = opcode & 0b00000111;
                         byte x = (byte)((opcode & 0b00111000) >> 3);
 
                         REG[reg] &= (byte)(0b11111110 << x);
@@ -619,7 +636,7 @@ namespace GBCore
                 case 0xF0: case 0xF1: case 0xF2: case 0xF3: case 0xF4: case 0xF5: case 0xF7:
                 case 0xF8: case 0xF9: case 0xFA: case 0xFB: case 0xFC: case 0xFD: case 0xFF:
                     {
-                        int reg = opcode & 0x0F;
+                        int reg = opcode & 0b00000111;
                         byte x = (byte)((opcode & 0b00111000) >> 3);
 
                         REG[reg] |= (byte)(0b00000001 << x);
@@ -743,7 +760,7 @@ namespace GBCore
                     break;
 
                 // LD (HL), Rx
-                case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75:                
+                case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75: case 0x77:                
                     {
                         byte x = (byte)(opcode & 0b00000111);
                         WriteMem(HL, REG[x]);
@@ -1012,7 +1029,7 @@ namespace GBCore
                 case 0x05: case 0x15: case 0x25: case 0x0D: case 0x1D: case 0x2D: case 0x3D:
                     {
                         byte x = (byte)((opcode & 0b00111000) >> 3);
-                        SetFlag(Flags.H, IsHalfCarry(REG[x], 0xFF));
+                        SetFlag(Flags.H, IsHalfCarry(REG[x], (byte)(REG[x] - 1)));
                         REG[x] -= 1;
                         SetFlag(Flags.Z, (REG[x] == 0));
                         SetFlag(Flags.N, true);                        
@@ -1111,7 +1128,7 @@ namespace GBCore
                 // DEC (HL)
                 case 0x35:
                     {
-                        SetFlag(Flags.H, IsHalfCarry(ReadMem(HL), 0xFF));
+                        SetFlag(Flags.H, IsHalfCarry(ReadMem(HL), (ushort)(ReadMem(HL) - 1)));
                         byte result = (byte)(ReadMem(HL) - 1);
                         WriteMem(HL, result);
 
@@ -1186,7 +1203,7 @@ namespace GBCore
                 // ADD A, r8
                 case 0x80: case 0x81: case 0x82: case 0x83: case 0x84: case 0x85: case 0x87:
                     {
-                        int reg = opcode & 0x0F;
+                        int reg = opcode & 0x00000111;
                         SetFlag(Flags.N, false);
                         SetFlag(Flags.H, IsHalfCarry(REG[A], REG[reg]));
                         SetFlag(Flags.C, REG[A] + REG[reg] > 0xFF);
@@ -1234,7 +1251,7 @@ namespace GBCore
                 // ADC A, r8
                 case 0x88: case 0x89: case 0x8A: case 0x8B: case 0x8C: case 0x8D: case 0x8F:
                     {
-                        int reg = opcode & 0x0F;
+                        int reg = opcode & 0b00000111;
                         byte val = (byte)(REG[reg] + (IsSet(Flags.C) ? 1 : 0));
                         SetFlag(Flags.N, false);
                         SetFlag(Flags.H, IsHalfCarry(REG[A], val));
@@ -1298,7 +1315,7 @@ namespace GBCore
                 // SUB A, r8
                 case 0x90: case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x97:
                     {
-                        int reg = opcode & 0x0F;
+                        int reg = opcode & 0b00000111;
                         SetFlag(Flags.N, true);
                         SetFlag(Flags.H, IsHalfCarry(REG[A], REG[reg]));
                         SetFlag(Flags.C, REG[A] - REG[reg] < 0);
@@ -1330,7 +1347,7 @@ namespace GBCore
                 // SBC A, r8
                 case 0x98: case 0x99: case 0x9A: case 0x9B: case 0x9C: case 0x9D: case 0x9F:
                     {
-                        int reg = opcode & 0x0F;
+                        int reg = opcode & 0b00000111;
                         byte val = (byte)(REG[reg] + (IsSet(Flags.C) ? 1 : 0));
                         SetFlag(Flags.N, true);
                         SetFlag(Flags.H, IsHalfCarry(REG[A], val));
@@ -1394,7 +1411,7 @@ namespace GBCore
                 // AND A, r8
                 case 0xA0: case 0xA1: case 0xA2: case 0xA3: case 0xA4: case 0xA5: case 0xA7:
                     {
-                        int reg = opcode & 0x0F;
+                        int reg = opcode & 0b00000111;
                         SetFlag(Flags.N, false);
                         SetFlag(Flags.H, true);
                         SetFlag(Flags.C, false);
@@ -1441,7 +1458,7 @@ namespace GBCore
                 // OR A, r8
                 case 0xB0: case 0xB1: case 0xB2: case 0xB3: case 0xB4: case 0xB5: case 0xB7:
                     {
-                        int reg = opcode & 0x0F;
+                        int reg = opcode & 0b00000111;
                         SetFlag(Flags.N, false);
                         SetFlag(Flags.H, false);
                         SetFlag(Flags.C, false);
@@ -1488,7 +1505,7 @@ namespace GBCore
                 // XOR A, r8
                 case 0xA8: case 0xA9: case 0xAA: case 0xAB: case 0xAC: case 0xAD: case 0xAF:
                     {
-                        int reg = opcode & 0x0F;
+                        int reg = opcode & 0b00000111;
                         SetFlag(Flags.N, false);
                         SetFlag(Flags.H, false);
                         SetFlag(Flags.C, false);
@@ -1534,7 +1551,7 @@ namespace GBCore
                 // CP A, r8 
                 case 0xB8: case 0xB9: case 0xBA: case 0xBB: case 0xBC: case 0xBD: case 0xBF:
                     {
-                        int reg = (opcode & 0x0F) - 8;
+                        int reg = (opcode & 0b00000111) - 8;
                         byte val = (byte)(REG[reg] + (IsSet(Flags.C) ? 1 : 0));
                         SetFlag(Flags.N, true);
                         SetFlag(Flags.H, IsHalfCarry(REG[A], val));
@@ -1898,7 +1915,7 @@ namespace GBCore
                     {
                         ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
                         PC++;
-                        WriteMem(SP, (byte)(PC >> 8));
+                        WriteMem(--SP, (byte)(PC >> 8));
                         WriteMem(--SP, (byte)(PC & 0x00FF));
                         PC = addr;
                         _cycleCount += 24;
@@ -2010,7 +2027,7 @@ namespace GBCore
                 // RETI
                 case 0xD9:
                     {
-                        ushort addr = (ushort)(ReadMem(SP) + (ReadMem(++SP) << 8));
+                        ushort addr = (ushort)(ReadMem(SP++) + (ReadMem(SP++) << 8));
                         PC = addr;
                         _cycleCount += 4;
                         IME = true;
@@ -2020,7 +2037,7 @@ namespace GBCore
                 // RET
                 case 0xC9:
                     {
-                        ushort addr = (ushort)(ReadMem(SP) + (ReadMem(++SP) << 8));
+                        ushort addr = (ushort)(ReadMem(SP++) + (ReadMem(SP++) << 8));
                         PC = addr;
                         _cycleCount += 4;
                     }
