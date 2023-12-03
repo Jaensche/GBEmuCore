@@ -10,8 +10,7 @@ namespace GBCore
             CPU cpu = new CPU();
 
             cpu.Load(File.ReadAllBytes("R:\\DEV\\GBEmuCore\\blargg\\cpu_instrs\\individual\\06-ld r,r.gb"));
-            //cpu.Load(File.ReadAllBytes("R:\\DEV\\GBEmuCore\\blargg\\cpu_instrs\\individual\\09-op r,r.gb"));
-
+            //cpu.Load(File.ReadAllBytes("R:\\DEV\\GBEmuCore\\blargg\\cpu_instrs\\cpu_instrs.gb"));
 
             while (true)
             {
