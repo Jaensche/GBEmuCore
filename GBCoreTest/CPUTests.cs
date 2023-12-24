@@ -11,7 +11,7 @@ namespace GBCoreTest
         [Test]
         public void SequenceTest()
         {
-            CPU cpu = new CPU();
+            CPU cpu = new CPU(false);
 
             cpu.Load(new byte[]{ 
                 0x01, 0x12, 0x34, // LD BC 0x3412
@@ -52,7 +52,7 @@ namespace GBCoreTest
         [TestCase(0x21, CPU.H, CPU.L)]
         public void LD_d16(byte opcode, byte regHigh, byte regLow)
         {
-            CPU cpu = new CPU();
+            CPU cpu = new CPU(false);
 
             cpu.Load(new byte[]{
                 opcode, 0xBC, 0xAB
@@ -72,7 +72,7 @@ namespace GBCoreTest
         [Test]
         public void LD_SP_d16()
         {
-            CPU cpu = new CPU();
+            CPU cpu = new CPU(false);
 
             cpu.Load(new byte[]{
                 0x31, 0xBC, 0xAB
@@ -91,7 +91,7 @@ namespace GBCoreTest
         [Test]
         public void INC_HalfCarry() 
         {
-            CPU cpu = new CPU();
+            CPU cpu = new CPU(false);
 
             cpu.Load(new byte[]{
                 0x00,
@@ -145,7 +145,7 @@ namespace GBCoreTest
         [Test]
         public void DEC_HalfCarry()
         {
-            CPU cpu = new CPU();
+            CPU cpu = new CPU(false);
 
             cpu.Load(new byte[]{
                 0x00,
@@ -198,7 +198,7 @@ namespace GBCoreTest
 
         public static void LD_ADDR_A()
         {
-            CPU cpu = new CPU();
+            CPU cpu = new CPU(false);
 
             cpu.Load(new byte[]{
                 0x02, 0xAB, 0xBC

@@ -4,6 +4,7 @@ project.lock.json
 .DS_Store
 *.pyc
 nupkg/
+*.json
 
 # Visual Studio Code
 .vscode/
@@ -41,3 +42,11 @@ bld/
 msbuild.log
 msbuild.err
 msbuild.wrn
+
+# Binaries
+*.bin
+*.xlsx
+*.txt
+*.pdf
+*.gb
+blargg/

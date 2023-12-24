@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.Win32;
+using System;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 
@@ -80,10 +81,13 @@ namespace GBCore
 
         public long _cycleCount;
 
+        public bool _traceEnabled;
+
         private OpcodesLookup opcodesLookup = new OpcodesLookup();
 
-        public CPU()
+        public CPU(bool traceEnabled)
         {
+            _traceEnabled = traceEnabled;
             Reset();
         }
 
@@ -158,22 +162,32 @@ namespace GBCore
 
         private bool IsPlusHalfCarry(byte a, byte operand)
         {
-            return (((a & 0x0F) + (operand & 0x0F)) & 0x10) == 0x10;
+            return ((a & 0x0F) + (operand & 0x0F) & 0x10) > 0;
+        }
+
+        private bool IsPlusHalfCarry(byte a, byte operand, byte carry)
+        {
+            return (((a & 0x0F) + (operand & 0x0F) + (carry & 0xf)) & 0x10) > 0;
         }
 
         private bool IsMinusHalfCarry(byte a, byte operand)
         {
-            return (((a & 0x0F) - (operand & 0x0F)) & 0x10) == 0x10;
+            return ((a & 0x0F) - (operand & 0x0F) & 0x10) > 0;
+        }
+
+        private bool IsMinusHalfCarry(byte a, byte operand, byte carry)
+        {
+            return (((a & 0x0F) - (operand & 0x0F) - (carry & 0xf)) & 0x10) > 0; 
         }
 
         private bool IsPlusHalfCarry(ushort a, ushort operand)
         {
-            return (((a & 0x0F00) + (operand & 0x0F00)) & 0x1000) == 0x1000;
+            return (((a & 0x0F00) + (operand & 0x0F00)) & 0x1000) > 0;
         }
 
         private bool IsMinusHalfCarry(ushort a, ushort operand)
         {
-            return (((a & 0x0F00) - (operand & 0x0F00)) & 0x1000) == 0x1000;
+            return (((a & 0x0F00) - (operand & 0x0F00)) & 0x1000) > 0;
         }
 
         private byte ReadMem(ushort addr)
@@ -193,27 +207,27 @@ namespace GBCore
         {
             RAM[addr] = data;
 
-            memTrace += ($"{addr:X4} <- {data:X2} ");
+            //memTrace += ($"{addr:X4} <- {data:X2} ");
 
-            if (addr == 0xFF01) // SB
-            {
-                Console.WriteLine($"Serial: {data:X2}");
-                memTrace += "[Serial]";
+            //if (addr == 0xFF01) // SB
+            //{
+            //    Console.WriteLine($"Serial: {data:X2}");
+            //    memTrace += "[Serial]";
 
-                //byte irqFlag = ReadMem(0xFF0F);
-                //irqFlag |= (byte)IrqFlags.Serial;
-                //WriteMem(0xFF0F, irqFlag);
-            }
+            //    //byte irqFlag = ReadMem(0xFF0F);
+            //    //irqFlag |= (byte)IrqFlags.Serial;
+            //    //WriteMem(0xFF0F, irqFlag);
+            //}
 
-            if (addr == 0xFF01) // SC
-            {
-                Console.WriteLine($"Serial End");
-            }
+            //if (addr == 0xFF01) // SC
+            //{
+            //    Console.WriteLine($"Serial End");
+            //}
 
-            if (addr == 0xFF40)
-            {
-                memTrace += "[LCDC]";
-            }
+            //if (addr == 0xFF40)
+            //{
+            //    memTrace += "[LCDC]";
+            //}
         }
 
         public void Reset()
@@ -331,7 +345,10 @@ namespace GBCore
 
             memTrace = string.Empty;
 
-            Trace(opcode);
+            if (_traceEnabled)
+            {
+                Trace(opcode);
+            }
 
             // Decode Opcode
             // Execute Opcode
@@ -1325,12 +1342,16 @@ namespace GBCore
                 // ADC A, d8
                 case 0xCE:
                     {
-                        byte val = (byte)(ReadMem(++PC) + (IsSet(Flags.C) ? 1 : 0));
+                        byte val = ReadMem(++PC);
+                        byte carry = IsSet(Flags.C) ? (byte)1 : (byte)0;
                         SetFlag(Flags.N, false);
-                        SetFlag(Flags.H, IsPlusHalfCarry(REG[A], val));
-                        SetFlag(Flags.C, REG[A] + val > 0xFF);
 
-                        REG[A] += val;
+                        bool halfcarry = IsPlusHalfCarry(REG[A], val, carry); //((REG[A] & 0x0F) + (val & 0x0F) + carry) > 0x0F;
+                        SetFlag(Flags.H, halfcarry);
+                        
+                        bool newCarry = (REG[A] + val + carry) > 0xFF;
+                        REG[A] += (byte)(val + carry);
+                        SetFlag(Flags.C, newCarry);
                         SetFlag(Flags.Z, REG[A] == 0);
 
                         PC++;
@@ -1341,9 +1362,10 @@ namespace GBCore
                 // ADC A, (HL)
                 case 0x8E:
                     {
-                        byte val = (byte)(ReadMem(HL) + (IsSet(Flags.C) ? 1 : 0));
+                        byte val = ReadMem(HL);
+                        byte carry = IsSet(Flags.C) ? (byte)1 : (byte)0;
                         SetFlag(Flags.N, false);
-                        SetFlag(Flags.H, IsPlusHalfCarry(REG[A], val));
+                        SetFlag(Flags.H, IsPlusHalfCarry(REG[A], val, carry));
                         SetFlag(Flags.C, REG[A] + val > 0xFF);
 
                         REG[A] += val;
@@ -1421,12 +1443,13 @@ namespace GBCore
                 // SBC A, d8
                 case 0xDE:
                     {
-                        byte val = (byte)(ReadMem(++PC) + (IsSet(Flags.C) ? 1 : 0));
+                        byte val = ReadMem(++PC);
+                        byte carry = IsSet(Flags.C) ? (byte)1 : (byte)0;
                         SetFlag(Flags.N, true);
-                        SetFlag(Flags.H, IsMinusHalfCarry(REG[A], val));
-                        SetFlag(Flags.C, REG[A] - val < 0);
+                        SetFlag(Flags.H, IsMinusHalfCarry(REG[A], val, carry));
+                        SetFlag(Flags.C, (REG[A] - val - carry) < 0);
 
-                        REG[A] -= val;
+                        REG[A] = (byte)(REG[A] - val - carry);
                         SetFlag(Flags.Z, REG[A] == 0);
 
                         PC++;
@@ -1624,7 +1647,8 @@ namespace GBCore
                 // CP A, d8
                 case 0xFE:
                     {
-                        byte val = (byte)(ReadMem(++PC) + (IsSet(Flags.C) ? 1 : 0));
+                        //byte val = (byte)(ReadMem(++PC) + (IsSet(Flags.C) ? 1 : 0));
+                        byte val = ReadMem(++PC);
                         SetFlag(Flags.N, true);
                         SetFlag(Flags.H, IsMinusHalfCarry(REG[A], val));
                         SetFlag(Flags.C, REG[A] - val < 0);
