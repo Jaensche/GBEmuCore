@@ -177,17 +177,35 @@ namespace GBCore
 
         private bool IsMinusHalfCarry(byte a, byte operand, byte carry)
         {
-            return (((a & 0x0F) - (operand & 0x0F) - (carry & 0xf)) & 0x10) > 0; 
+            return (((a & 0x0F) - (operand & 0x0F) - (carry & 0x0F)) & 0x10) > 0; 
         }
 
-        private bool IsPlusHalfCarry(ushort a, ushort operand)
+        private bool IsPlusHalfCarryLowByte(ushort a, ushort operand)
         {
-            return (((a & 0x0F00) + (operand & 0x0F00)) & 0x1000) > 0;
+            byte lowA = (byte)(a & 0xFF);
+            byte lowOp = (byte)(operand & 0xFF);
+            return IsPlusHalfCarry(lowA, lowOp);
         }
 
-        private bool IsMinusHalfCarry(ushort a, ushort operand)
+        private bool IsPlusHalfCarryHighByte(ushort a, ushort operand)
         {
-            return (((a & 0x0F00) - (operand & 0x0F00)) & 0x1000) > 0;
+            byte highA = (byte)((a & 0xFF00) >> 8);
+            byte highOp = (byte)((operand & 0xFF00) >> 8);
+            return IsPlusHalfCarry(highA, highOp);
+        }
+
+        private bool IsMinusHalfCarryLowByte(ushort a, ushort operand)
+        {
+            byte lowA = (byte)(a & 0xFF);
+            byte lowOp = (byte)(operand & 0xFF);
+            return IsMinusHalfCarry(lowA, lowOp);
+        }
+
+        private bool IsMinusHalfCarryHighByte(ushort a, ushort operand)
+        {
+            byte highA = (byte)((a & 0xFF00) >> 8);
+            byte highOp = (byte)((operand & 0xFF00) >> 8);
+            return IsMinusHalfCarry(highA, highOp);
         }
 
         private byte ReadMem(ushort addr)
@@ -1202,12 +1220,12 @@ namespace GBCore
                 // DEC (HL)
                 case 0x35:
                     {
-                        SetFlag(Flags.H, IsMinusHalfCarry(ReadMem(HL), (ushort)(ReadMem(HL) - 1)));
+                        //SetFlag(Flags.H, IsMinusHalfCarry(ReadMem(HL), (ushort)(ReadMem(HL) - 1)));
                         byte result = (byte)(ReadMem(HL) - 1);
                         WriteMem(HL, result);
 
-                        SetFlag(Flags.Z, result == 0);
-                        SetFlag(Flags.N, true);
+                        //SetFlag(Flags.Z, result == 0);
+                        //SetFlag(Flags.N, true);
 
                         PC++;
                         _cycleCount += 12;
@@ -1311,7 +1329,7 @@ namespace GBCore
                     {
                         sbyte value = (sbyte)ReadMem(++PC);
                         SetFlag(Flags.N, false);
-                        SetFlag(Flags.H, IsPlusHalfCarry(SP, (ushort)value));
+                        SetFlag(Flags.H, IsPlusHalfCarryLowByte(SP, (ushort)value));
                         SetFlag(Flags.C, SP + value > 0xFF);
 
                         SP += (ushort)value;
@@ -2190,7 +2208,7 @@ namespace GBCore
         private void Add_HL(ushort regVal)
         {
             SetFlag(Flags.N, false);
-            SetFlag(Flags.H, IsPlusHalfCarry(HL, regVal));
+            SetFlag(Flags.H, IsPlusHalfCarryHighByte(HL, regVal));
             SetFlag(Flags.C, HL + regVal > ushort.MaxValue);
             HL += regVal;
 
