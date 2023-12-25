@@ -13,7 +13,7 @@ namespace GBCore
             public bool Verbose { get; set; }
 
             [Option('r', "rom", Required = true, HelpText = "Rom file to run")]
-            public string romFile { get; set; }
+            public string RomFile { get; set; }
         }
 
         public static void Main(string[] args)
@@ -27,7 +27,7 @@ namespace GBCore
                        {
                            traceEnabled = true;
                        }
-                       rom = o.romFile;
+                       rom = o.RomFile;
                    });
 
             CPU cpu = new CPU(traceEnabled);
