@@ -160,6 +160,16 @@ namespace GBCore
             return ((Flags)REG[F]).HasFlag(flag);
         }
 
+        private bool IsPlusCarry(byte a, byte operand)
+        {
+            return (a + operand) > byte.MaxValue;
+        }
+
+        private bool IsPlusCarry(ushort a, ushort operand)
+        {
+            return (a + operand) > ushort.MaxValue;
+        }
+
         private bool IsPlusHalfCarry(byte a, byte operand)
         {
             return ((a & 0x0F) + (operand & 0x0F) & 0x10) > 0;
@@ -189,9 +199,12 @@ namespace GBCore
 
         private bool IsPlusHalfCarryHighByte(ushort a, ushort operand)
         {
+            byte lowA = (byte)(a & 0xFF);
+            byte lowOp = (byte)(operand & 0xFF);
+            byte lowCarry = IsPlusCarry(lowA, lowOp) ? (byte) 1 : (byte) 0;
             byte highA = (byte)((a & 0xFF00) >> 8);
             byte highOp = (byte)((operand & 0xFF00) >> 8);
-            return IsPlusHalfCarry(highA, highOp);
+            return IsPlusHalfCarry(highA, highOp, lowCarry);
         }
 
         private bool IsMinusHalfCarryLowByte(ushort a, ushort operand)
@@ -2209,6 +2222,7 @@ namespace GBCore
         {
             SetFlag(Flags.N, false);
             SetFlag(Flags.H, IsPlusHalfCarryHighByte(HL, regVal));
+            //SetFlag(Flags.H, IsPlusHalfCarryLowByte(HL, regVal));
             SetFlag(Flags.C, HL + regVal > ushort.MaxValue);
             HL += regVal;
 
