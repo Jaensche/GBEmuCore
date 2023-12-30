@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using CommandLine;
 
 namespace GBCore
@@ -15,6 +16,9 @@ namespace GBCore
 
             [Option('i', "instr", Required = false, HelpText = "Maximum instruction count to execute")]
             public long MaxInstructions { get; set; }
+
+            [Option('f', "file", Required = false, HelpText = "Write ouput to out.txt")]
+            public bool WritToFile { get; set; }
         }
 
         public static void Main(string[] args)
@@ -26,6 +30,7 @@ namespace GBCore
             var bla = Parser.Default
                 .ParseArguments<Options>(args);
 
+            StreamWriter writer = null;
             Parser.Default
                 .ParseArguments<Options>(args)
                 .WithParsed(options =>
@@ -33,6 +38,10 @@ namespace GBCore
                     if (options.Verbose)
                     {
                         traceEnabled = true;
+                    }
+                    if (options.WritToFile)
+                    {
+                        writer = ConsoleToFile();
                     }
                     maxInstr = options.MaxInstructions;
                     rom = options.RomFile;
@@ -48,10 +57,37 @@ namespace GBCore
                 cpu.Cycle();
                 count++;
 
-                if(count == 1239515)
+                if(count == 1249858)
                 {
                 }
             }
+
+            if(writer != null)
+            {
+                writer.Flush();
+                writer.Close();
+                writer.Dispose();
+            }
+        }
+
+        private static StreamWriter ConsoleToFile()
+        {
+            FileStream ostrm;
+            StreamWriter writer;
+            try
+            {
+                ostrm = new FileStream("out.txt", FileMode.Create, FileAccess.Write);
+                writer = new StreamWriter(ostrm);
+                Console.SetOut(writer);
+
+                return writer;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("Cannot open file");
+                Console.WriteLine(e.Message);
+                return null;
+            }                        
         }
     }
 }
