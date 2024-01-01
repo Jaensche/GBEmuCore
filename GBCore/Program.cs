@@ -57,7 +57,7 @@ namespace GBCore
                 cpu.Cycle();
                 count++;
 
-                if(count == 1249858)
+                if(count == 622477)
                 {
                 }
             }

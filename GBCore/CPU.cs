@@ -71,11 +71,11 @@ namespace GBCore
         public byte[] RAM = new byte[0x10000];
         public byte[] VRAM = new byte[0x10000];
 
-        public ushort PC;
+        public ushort PC; // Program Counter
 
-        public bool IME;
+        public bool IME; // Interrupt Master Enable
 
-        public ushort SP;
+        public ushort SP; // Stack Pointer
 
         public bool RedrawFlag;
 
@@ -325,8 +325,8 @@ namespace GBCore
             if (IME && ((IrqFlags)irqFlag).HasFlag(flag) && ((IrqFlags)irqEnable).HasFlag(flag))
             {
                 IME = false;
-                WriteMem(--SP, (byte)(PC >> 8));
-                WriteMem(--SP, (byte)(PC & 0x00FF));
+                Push16(PC);
+
                 WriteMem(0xFF0F, (byte)(irqFlag & (byte)~flag));
 
                 switch (flag)
@@ -484,6 +484,8 @@ namespace GBCore
                     break;
                 case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x35: case 0x37:
                     SWAP_r(opcode); break;
+                case 0x36: // SWAP (HL)
+                    SWAP_HL(opcode); break;
                 case 0x38: case 0x39: case 0x3A: case 0x3B: case 0x3C: case 0x3D: case 0x3F:
                     SRL_r(opcode); break;
                 case 0x3E:
@@ -530,6 +532,11 @@ namespace GBCore
                 default:
                     throw new NotImplementedException(opcode.ToString("X2"));
             }
+        }
+
+        private void SWAP_HL(byte opcode)
+        {
+            throw new NotImplementedException();
         }
 
         private void RLC_r(byte opcode)
@@ -902,12 +909,15 @@ namespace GBCore
                 // LD HL, SP+r8
                 case 0xF8:
                     {
-                        //SetFlag(Flags.N, false);
-                        //SetFlag(Flags.Z, false);
-                        //SetFlag(Flags.H, IsHalfCarry(SP, (ushort)(sbyte)ReadMem(++PC))); 
-                        //SetFlag(Flags.C, SP + (sbyte)ReadMem(++PC) > 0xFFFF); 
+                        sbyte op = (sbyte)ReadMem(++PC);
 
-                        HL = (ushort)(SP + (sbyte)ReadMem(++PC));
+                        SetFlag(Flags.N, false);
+                        SetFlag(Flags.Z, false);
+                        //SetFlag(Flags.H, IsPlusHalfCarry((byte)(SP & 0x00FF), (byte)op));
+                        SetFlag(Flags.H, IsPlusHalfCarryLowByte(SP, (byte)op));
+                        SetFlag(Flags.C, IsPlusCarry((byte)(SP & 0x00FF), (byte)op));
+
+                        HL = (ushort)(SP + op);
                         PC++;
                         _cycleCount += 12;
                     }
@@ -958,6 +968,12 @@ namespace GBCore
                     {
                         ushort addr = (ushort)(0xFF00 + ReadMem(++PC));
                         WriteMem(addr, REG[A]);
+
+                        if (REG[A] == 0x04)
+                        {
+
+                        }
+
                         PC++;
                         _cycleCount += 12;
                     }
@@ -1039,8 +1055,8 @@ namespace GBCore
                 case 0x08:
                     {
                         ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
-                        WriteMem(addr, (byte)(SP & 0x00FF));
-                        WriteMem((ushort)(addr + 1), (byte)(SP & 0xFF00 >> 8));
+                        WriteMem(addr, (byte)(SP & 0x00FF));                        
+                        WriteMem((ushort)(addr + 1), (byte)((SP & 0xFF00) >> 8));
                         PC++;
                         _cycleCount += 20;
                     }
@@ -1059,7 +1075,7 @@ namespace GBCore
                  * Stack
                  ********************************/
 
-                // PUSH Rx
+                        // PUSH Rx
                 case 0xC5: case 0xD5: case 0xE5:
                     {
                         byte x = (byte)((opcode & 0b00110000) >> 3);
@@ -1214,8 +1230,9 @@ namespace GBCore
                 // INC (HL)
                 case 0x34:
                     {
-                        SetFlag(Flags.H, IsPlusHalfCarry(ReadMem(HL), 1));
-                        byte result = (byte)(ReadMem(HL) + 1);
+                        byte currentHL = ReadMem(HL);
+                        SetFlag(Flags.H, IsPlusHalfCarry(currentHL, 1));
+                        byte result = (byte)(currentHL + 1);
                         WriteMem(HL, result);
 
                         SetFlag(Flags.Z, result == 0);
@@ -1229,12 +1246,13 @@ namespace GBCore
                 // DEC (HL)
                 case 0x35:
                     {
-                        //SetFlag(Flags.H, IsMinusHalfCarry(ReadMem(HL), (ushort)(ReadMem(HL) - 1)));
-                        byte result = (byte)(ReadMem(HL) - 1);
+                        byte currentHL = ReadMem(HL);
+                        byte result = (byte)(currentHL - 1);
                         WriteMem(HL, result);
 
-                        //SetFlag(Flags.Z, result == 0);
-                        //SetFlag(Flags.N, true);
+                        SetFlag(Flags.Z, result == 0);
+                        SetFlag(Flags.N, true);
+                        SetFlag(Flags.H, IsMinusHalfCarryLowByte(currentHL, (ushort)1));
 
                         PC++;
                         _cycleCount += 12;
@@ -1339,7 +1357,7 @@ namespace GBCore
                         sbyte value = (sbyte)ReadMem(++PC);
                         SetFlag(Flags.N, false);
                         SetFlag(Flags.H, IsPlusHalfCarryLowByte(SP, (ushort)value));
-                        SetFlag(Flags.C, SP + value > 0xFF);
+                        SetFlag(Flags.C, IsPlusCarry((byte)(SP & 0x00FF), (byte)value));
 
                         SP += (ushort)value;
                         SetFlag(Flags.Z, false);
@@ -2006,6 +2024,10 @@ namespace GBCore
                         {
                             PC = addr;
                             _cycleCount += 16;
+                        }
+                        else
+                        {
+                            PC++;
                         }
                     }
                     break;
