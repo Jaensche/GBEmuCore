@@ -2013,6 +2013,10 @@ namespace GBCore
                             PC = addr;
                             _cycleCount += 16;
                         }
+                        else
+                        {
+                            PC++;
+                        }
                     }
                     break;
 
@@ -2040,6 +2044,10 @@ namespace GBCore
                         {
                             PC = addr;
                             _cycleCount += 16;
+                        }
+                        else
+                        {
+                            PC++;
                         }
                     }
                     break;
@@ -2145,9 +2153,7 @@ namespace GBCore
                 case 0xC7: case 0xD7: case 0xE7: case 0xF7:
                     {
                         byte addr = (byte)((opcode & 0xF0) - 0xC0);
-                        //WriteMem(--SP, (byte)(PC >> 8));
-                        //WriteMem(--SP, (byte)(PC & 0x00FF));
-                        Push16(PC);
+                        Push16(++PC);
                         PC = addr;
                         _cycleCount += 16;
                     }
@@ -2156,10 +2162,8 @@ namespace GBCore
                 // RST
                 case 0xCF: case 0xDF: case 0xEF: case 0xFF:
                     {
-                        byte addr = (byte)(((opcode & 0xF0) - 0xC0) + 8);
-                        //WriteMem(--SP, (byte)(PC >> 8));
-                        //WriteMem(--SP, (byte)(PC & 0x00FF));
-                        Push16(PC);
+                        byte addr = (byte)((opcode & 0xF0) - 0xC0 + 8);
+                        Push16(++PC);
                         PC = addr;
                         _cycleCount += 4;
                     }
