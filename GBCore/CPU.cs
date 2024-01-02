@@ -643,12 +643,12 @@ namespace GBCore
             _cycleCount += 8;
         }
 
-        private void RES_X_r8(byte opcode)
+        private void RES_X_r8(byte opcode) // Reset bit X to 0
         {
             int reg = opcode & 0b00000111;
             byte x = (byte)((opcode & 0b00111000) >> 3);
 
-            REG[reg] &= (byte)(0b11111110 << x);
+            REG[reg] = (byte)(REG[reg] & ~(byte)(0b00000001 << x));
 
             PC++;
             _cycleCount += 8;
