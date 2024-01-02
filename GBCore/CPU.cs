@@ -754,10 +754,10 @@ namespace GBCore
 
         private void SRA_r(byte opcode)
         {
-            int reg = (opcode & 0b00000111) - 8;
+            int reg = opcode & 0b00000111;
 
             SetFlag(Flags.C, (REG[reg] & 0b00000001) > 0);
-            REG[reg] = (byte)((REG[reg] >> 1) | 0x80);
+            REG[reg] = (byte)((REG[reg] & (1 << 7)) | (REG[reg] >> 1));
 
             SetFlag(Flags.Z, REG[reg] == 0);
             SetFlag(Flags.N, false);
@@ -1322,7 +1322,7 @@ namespace GBCore
                 // ADD A, r8
                 case 0x80: case 0x81: case 0x82: case 0x83: case 0x84: case 0x85: case 0x87:
                     {
-                        int reg = opcode & 0x00000111;
+                        int reg = opcode & 0b00000111;
                         SetFlag(Flags.N, false);
                         SetFlag(Flags.H, IsPlusHalfCarry(REG[A], REG[reg]));
                         SetFlag(Flags.C, REG[A] + REG[reg] > 0xFF);
@@ -1371,12 +1371,13 @@ namespace GBCore
                 case 0x88: case 0x89: case 0x8A: case 0x8B: case 0x8C: case 0x8D: case 0x8F:
                     {
                         int reg = opcode & 0b00000111;
-                        byte val = (byte)(REG[reg] + (IsSet(Flags.C) ? 1 : 0));
+                        byte carry = IsSet(Flags.C) ? (byte)1 : (byte)0;
+                        byte val = REG[reg];
                         SetFlag(Flags.N, false);
-                        SetFlag(Flags.H, IsPlusHalfCarry(REG[A], val));
-                        SetFlag(Flags.C, REG[A] + val > 0xFF);
+                        SetFlag(Flags.H, IsPlusHalfCarry(REG[A], val, carry));
+                        SetFlag(Flags.C, (REG[A] + val + carry) > 0xFF);
 
-                        REG[A] += val;
+                        REG[A] += (byte)(val + carry);
                         SetFlag(Flags.Z, REG[A] == 0);
 
                         PC++;
@@ -1472,12 +1473,13 @@ namespace GBCore
                 case 0x98: case 0x99: case 0x9A: case 0x9B: case 0x9C: case 0x9D: case 0x9F:
                     {
                         int reg = opcode & 0b00000111;
-                        byte val = (byte)(REG[reg] + (IsSet(Flags.C) ? 1 : 0));
+                        byte val = REG[reg];
+                        byte carry = IsSet(Flags.C) ? (byte)1 : (byte)0;
                         SetFlag(Flags.N, true);
-                        SetFlag(Flags.H, IsMinusHalfCarry(REG[A], val));
-                        SetFlag(Flags.C, REG[A] - val < 0);
+                        SetFlag(Flags.H, IsMinusHalfCarry(REG[A], val, carry));
+                        SetFlag(Flags.C, (REG[A] - val - carry) < 0);
 
-                        REG[A] -= val;
+                        REG[A] = (byte)(REG[A] - val - carry);
                         SetFlag(Flags.Z, REG[A] == 0);
 
                         PC++;
@@ -1679,8 +1681,8 @@ namespace GBCore
                         int reg = (opcode & 0b00000111);
                         byte val = (byte)(REG[reg]); //+ (IsSet(Flags.C) ? 1 : 0));
                         SetFlag(Flags.N, true);
-                        SetFlag(Flags.H, IsPlusHalfCarry(REG[A], val));
-                        SetFlag(Flags.C, REG[A] > val);
+                        SetFlag(Flags.H, IsMinusHalfCarry(REG[A], val));
+                        SetFlag(Flags.C, val > REG[A]);
 
                         SetFlag(Flags.Z, REG[A] == val);
 
@@ -1766,7 +1768,7 @@ namespace GBCore
 
                         SetFlag(Flags.C, (REG[A] & 0b10000000) > 0);
 
-                        REG[A] = (byte)(REG[A] << 1);
+                        REG[A] = (byte)((REG[A] << 1) | (REG[A] >> 7));
 
                         _cycleCount += 4;
                         PC++;
@@ -1782,7 +1784,7 @@ namespace GBCore
 
                         SetFlag(Flags.C, (REG[A] & 0b00000001) > 0);
 
-                        REG[A] = (byte)(REG[A] >> 1);
+                        REG[A] = (byte)((REG[A] >> 1) | (REG[A] << 7));
 
                         _cycleCount += 4;
                         PC++;
