@@ -1,7 +1,10 @@
-﻿using Microsoft.Win32;
+﻿using CommandLine;
+using Microsoft.Win32;
 using System;
 using System.Reflection.Emit;
+using System.Reflection.Metadata;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics.X86;
 
 [assembly: InternalsVisibleTo("GbCoreTest")]
 namespace GBCore
@@ -50,7 +53,7 @@ namespace GBCore
         Timer = 4,
         Serial = 8,
         Joypad = 16
-    }
+    }    
 
     public class CPU
     {
@@ -69,6 +72,15 @@ namespace GBCore
         private string memTrace;
 
         public byte[] RAM = new byte[0x10000];
+        public const ushort DIV = 0xFF04;
+        public const ushort TIMA = 0xFF05;
+        public const ushort TMA = 0xFF06;
+        public const ushort TAC = 0xFF07;
+        int timerDivider = 0;
+
+        public const ushort IRQ_FLAGS = 0xFF0F;
+        public const ushort IRQ_ENABLE = 0xFF0F;
+
         public byte[] VRAM = new byte[0x10000];
 
         public ushort PC; // Program Counter
@@ -82,6 +94,8 @@ namespace GBCore
         public long _cycleCount;
 
         public bool _traceEnabled;
+
+        public bool _haltState;
 
         private OpcodesLookup opcodesLookup = new OpcodesLookup();
 
@@ -221,6 +235,55 @@ namespace GBCore
             return IsMinusHalfCarry(highA, highOp);
         }
 
+        private void TimerTick(long ticks)
+        {
+            //for (long i = 0; i < ticks; i++)
+            {
+                timerDivider++;
+
+                byte tac = ReadMem(TAC);
+                byte inputClockSelect = (byte)(tac & 0b00000011);
+                bool timerEnable = (tac & 0b00000100) > 0;
+
+                if (timerEnable)
+                {
+                    byte tima = ReadMem(TIMA);
+
+                    if (tima == 0xFF)
+                    {
+                        // Reset TIMA and raise timer interrupt
+                        byte irqFlags = ReadMem(IRQ_FLAGS);
+                        WriteMem(IRQ_FLAGS, (byte)((byte)irqFlags | (byte)IrqFlags.Timer));
+                        WriteMem(TIMA, ReadMem(TMA));
+                    }
+                    else if (timerDivider % 64 == 0 && inputClockSelect == 0b00) // 1024
+                    {
+                        WriteMem(TIMA, (byte)(tima + 1));
+                    }
+                    else if (timerDivider % 32 == 0 && inputClockSelect == 0b11) // 256
+                    {
+                        WriteMem(TIMA, (byte)(tima + 1));
+                    }
+                    else if (timerDivider % 16 == 0 && inputClockSelect == 0b10) // 64
+                    {
+                        WriteMem(TIMA, (byte)(tima + 1));
+                    }
+                    else if (inputClockSelect == 0b01) // 16
+                    {
+                        WriteMem(TIMA, (byte)(tima + 1));
+                    }
+                }
+
+                // 16
+                WriteMem(DIV, (byte)(ReadMem(DIV) + 1));
+
+                if (timerDivider >= 64)
+                {
+                    timerDivider = 0;
+                }
+            }
+        }
+
         private byte ReadMem(ushort addr)
         {
             byte data = RAM[addr];
@@ -236,6 +299,12 @@ namespace GBCore
 
         private void WriteMem(ushort addr, byte data)
         {
+            //DIV - Divider Register - Always set to 0x00
+            if (addr == 0xFF04) 
+            {
+                data = 0x00;
+            }
+
             RAM[addr] = data;
 
             //memTrace += ($"{addr:X4} <- {data:X2} ");
@@ -317,17 +386,31 @@ namespace GBCore
             RedrawFlag = false;
         }
 
-        private void IrqVector(IrqFlags flag)
+        private void CheckInterrupt(IrqFlags flag)
         {
-            byte irqFlag = ReadMem(0xFF0F);
-            var irqEnable = ReadMem(0xFFFF);
+            var irqFlags = (IrqFlags)ReadMem(IRQ_FLAGS);
+            var irqEnable = (IrqFlags)ReadMem(IRQ_ENABLE);
 
-            if (IME && ((IrqFlags)irqFlag).HasFlag(flag) && ((IrqFlags)irqEnable).HasFlag(flag))
+            if (!IME && irqFlags.HasFlag(flag) && irqEnable.HasFlag(flag))
             {
+                if (_haltState)
+                {
+                    _haltState = false;
+                }
+            }
+
+            if (IME && irqFlags.HasFlag(flag) && irqEnable.HasFlag(flag))
+            {
+                if (_haltState)
+                {
+                    _haltState = false;
+                }
+
                 IME = false;
                 Push16(PC);
 
-                WriteMem(0xFF0F, (byte)(irqFlag & (byte)~flag));
+                // Reset flag
+                WriteMem(IRQ_FLAGS, (byte)((byte)irqFlags & (byte)~flag));
 
                 switch (flag)
                 {
@@ -351,25 +434,22 @@ namespace GBCore
                         PC = 0x0060;
                         break;
                 }
-            }
+            }            
         }
 
         private void IRQ()
         {
-            IrqVector(IrqFlags.VBlank);
-            IrqVector(IrqFlags.LcdStat);
-            IrqVector(IrqFlags.Timer);
-            IrqVector(IrqFlags.Serial);
-            IrqVector(IrqFlags.Joypad);
+            CheckInterrupt(IrqFlags.VBlank);
+            CheckInterrupt(IrqFlags.LcdStat);
+            CheckInterrupt(IrqFlags.Timer);
+            CheckInterrupt(IrqFlags.Serial);
+            CheckInterrupt(IrqFlags.Joypad);
         }
 
         public void Cycle()
         {
             // reset redraw
             RedrawFlag = false;
-
-            // handle interrupts
-            IRQ();
 
             // Load Opcode
             byte opcode = RAM[PC];
@@ -381,9 +461,16 @@ namespace GBCore
                 Trace(opcode);
             }
 
+            long oldCycleCount = _cycleCount;
+
             // Decode Opcode
             // Execute Opcode
             DecodeExecute(opcode);
+
+            TimerTick(_cycleCount - oldCycleCount);
+
+            // handle interrupts
+            IRQ();
         }
 
         private void Trace(byte opcode)
@@ -536,7 +623,7 @@ namespace GBCore
 
         private void SWAP_HL(byte opcode)
         {
-            throw new NotImplementedException();
+            HL = APU.SWP(HL);            
         }
 
         private void RLC_r(byte opcode)
@@ -792,8 +879,11 @@ namespace GBCore
 
                 //NOP
                 case 0x00:
-                    PC++;
-                    _cycleCount += 4;
+                    if (!_haltState)
+                    {
+                        PC++;
+                        _cycleCount += 4;
+                    }                    
                     break;
 
                 // STOP
@@ -803,7 +893,11 @@ namespace GBCore
 
                 // HALT
                 case 0x76:
-                    PC++;
+                    if(!_haltState)
+                    {
+                        _haltState = true;
+                        PC++;
+                    }
                     break;
 
                 // DI
@@ -969,9 +1063,8 @@ namespace GBCore
                         ushort addr = (ushort)(0xFF00 + ReadMem(++PC));
                         WriteMem(addr, REG[A]);
 
-                        if (REG[A] == 0x04)
+                        if (REG[A] == 0xC0)
                         {
-
                         }
 
                         PC++;
@@ -1412,9 +1505,9 @@ namespace GBCore
                         byte carry = IsSet(Flags.C) ? (byte)1 : (byte)0;
                         SetFlag(Flags.N, false);
                         SetFlag(Flags.H, IsPlusHalfCarry(REG[A], val, carry));
-                        SetFlag(Flags.C, REG[A] + val > 0xFF);
+                        SetFlag(Flags.C, (REG[A] + val + carry) > 0xFF);
 
-                        REG[A] += val;
+                        REG[A] += (byte)(val + carry);
                         SetFlag(Flags.Z, REG[A] == 0);
 
                         PC++;
@@ -1507,12 +1600,13 @@ namespace GBCore
                 // SBC A, (HL)
                 case 0x9E:
                     {
-                        byte val = (byte)(ReadMem(HL) + (IsSet(Flags.C) ? 1 : 0));
+                        byte val = ReadMem(HL);
+                        byte carry = IsSet(Flags.C) ? (byte)1 : (byte)0;
                         SetFlag(Flags.N, true);
-                        SetFlag(Flags.H, IsMinusHalfCarry(REG[A], val));
-                        SetFlag(Flags.C, REG[A] - val < 0);
+                        SetFlag(Flags.H, IsMinusHalfCarry(REG[A], val, carry));
+                        SetFlag(Flags.C, (REG[A] - val - carry) < 0);
 
-                        REG[A] -= val;
+                        REG[A] = (byte)(REG[A] - val - carry);
                         SetFlag(Flags.Z, REG[A] == 0);
 
                         PC++;
@@ -1710,10 +1804,11 @@ namespace GBCore
                 // CP A, (HL)
                 case 0xBE:
                     {
-                        byte val = (byte)(ReadMem(HL) + (IsSet(Flags.C) ? 1 : 0));
+                        byte val = ReadMem(HL);
+                        //byte carry = IsSet(Flags.C) ? (byte)1 : (byte)0;
                         SetFlag(Flags.N, true);
                         SetFlag(Flags.H, IsMinusHalfCarry(REG[A], val));
-                        SetFlag(Flags.C, REG[A] - val < 0);
+                        SetFlag(Flags.C, (REG[A] - val) < 0);
 
                         SetFlag(Flags.Z, (REG[A] - val) == 0);
 
