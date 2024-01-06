@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using System.Text.RegularExpressions;
 
 namespace GBCore
 {
@@ -41,7 +40,7 @@ namespace GBCore
          * Byte 3 - Sprite Flags
         */
 
-        byte[] VRAM = new byte[8 * 1024];
+        private byte[] VRAM = new byte[8 * 1024];
         //byte[] TileData = new byte[16 * 24 * 16];
         //byte[,] OAM = new byte[40 * 8 * 8, 2]; // 40 Tiles * 8x8 Pixels * 2 bytes (nibbles), Sprite Data
 
@@ -49,7 +48,7 @@ namespace GBCore
         //byte[,] Window = new byte[256, 256]; // Overlay over Background, Position WX, WY
         //byte[,] Viewport = new byte[160, 144];
 
-        byte[,] Screen = new byte[160, 144];
+        private byte[,] Screen = new byte[160, 144];
 
         public void Run()
         {

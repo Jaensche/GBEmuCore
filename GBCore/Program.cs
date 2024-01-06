@@ -27,9 +27,6 @@ namespace GBCore
             string rom = string.Empty;
             long maxInstr = 0;
 
-            var bla = Parser.Default
-                .ParseArguments<Options>(args);
-
             StreamWriter writer = null;
             Parser.Default
                 .ParseArguments<Options>(args)
@@ -47,20 +44,10 @@ namespace GBCore
                     rom = options.RomFile;
                 });
 
-            CPU cpu = new CPU(traceEnabled);
+            byte[] code = File.ReadAllBytes(rom);
 
-            cpu.Load(File.ReadAllBytes(rom));
-
-            long count = 0;
-            while (count < maxInstr)
-            {
-                cpu.Cycle();
-                count++;
-
-                if(count == 622477)
-                {
-                }
-            }
+            Gameboy gameboy = new Gameboy(traceEnabled);
+            gameboy.Run(code, maxInstr);
 
             if(writer != null)
             {
@@ -72,15 +59,15 @@ namespace GBCore
 
         private static StreamWriter ConsoleToFile()
         {
-            FileStream ostrm;
-            StreamWriter writer;
+            FileStream fileStream;
+            StreamWriter streamWriter;
             try
             {
-                ostrm = new FileStream("out.txt", FileMode.Create, FileAccess.Write);
-                writer = new StreamWriter(ostrm);
-                Console.SetOut(writer);
+                fileStream = new FileStream("out.txt", FileMode.Create, FileAccess.Write);
+                streamWriter = new StreamWriter(fileStream);
+                Console.SetOut(streamWriter);
 
-                return writer;
+                return streamWriter;
             }
             catch (Exception e)
             {

@@ -5,8 +5,6 @@ VisualStudioVersion = 17.8.34322.80
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GBCore", "GBCore\GBCore.csproj", "{0C4AEF5C-2805-4BAF-BA44-88D8F54605C2}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GBCoreTest", "GBCoreTest\GBCoreTest.csproj", "{B36E8C46-73C8-4C22-983C-260A4E51C136}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -17,10 +15,6 @@ Global
 		{0C4AEF5C-2805-4BAF-BA44-88D8F54605C2}.Debug|x64.Build.0 = Debug|x64
 		{0C4AEF5C-2805-4BAF-BA44-88D8F54605C2}.Release|x64.ActiveCfg = Release|x64
 		{0C4AEF5C-2805-4BAF-BA44-88D8F54605C2}.Release|x64.Build.0 = Release|x64
-		{B36E8C46-73C8-4C22-983C-260A4E51C136}.Debug|x64.ActiveCfg = Debug|x64
-		{B36E8C46-73C8-4C22-983C-260A4E51C136}.Debug|x64.Build.0 = Debug|x64
-		{B36E8C46-73C8-4C22-983C-260A4E51C136}.Release|x64.ActiveCfg = Release|x64
-		{B36E8C46-73C8-4C22-983C-260A4E51C136}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,10 +1,5 @@
-﻿using CommandLine;
-using Microsoft.Win32;
-using System;
-using System.Reflection.Emit;
-using System.Reflection.Metadata;
+﻿using System;
 using System.Runtime.CompilerServices;
-using System.Runtime.Intrinsics.X86;
 
 [assembly: InternalsVisibleTo("GbCoreTest")]
 namespace GBCore
@@ -12,19 +7,19 @@ namespace GBCore
     /*
      *  0000 	3FFF 	16KB ROM bank 00 	From cartridge, usually a fixed bank
         4000 	7FFF 	16KB ROM Bank 01~NN 	From cartridge, switchable bank via MBC (if any)
-        8000 	9FFF 	8KB Video RAM (VRAM) 	Only bank 0 in Non-CGB mode
+        8000 	9FFF 	8KB Video _ram (V_ram) 	Only bank 0 in Non-CGB mode
 
         Switchable bank 0/1 in CGB mode
-        A000 	BFFF 	8KB External RAM 	In cartridge, switchable bank if any
-        C000 	CFFF 	4KB Work RAM (WRAM) bank 0 	
-        D000 	DFFF 	4KB Work RAM (WRAM) bank 1~N 	Only bank 1 in Non-CGB mode
+        A000 	BFFF 	8KB External _ram 	In cartridge, switchable bank if any
+        C000 	CFFF 	4KB Work _ram (W_ram) bank 0 	
+        D000 	DFFF 	4KB Work _ram (W_ram) bank 1~N 	Only bank 1 in Non-CGB mode
 
         Switchable bank 1~7 in CGB mode
-        E000 	FDFF 	Mirror of C000~DDFF (ECHO RAM) 	Typically not used
+        E000 	FDFF 	Mirror of C000~DDFF (ECHO _ram) 	Typically not used
         FE00 	FE9F 	Sprite attribute table (OAM) 	
         FEA0 	FEFF 	Not Usable 	
         FF00 	FF7F 	I/O Registers 	
-        FF80 	FFFE 	High RAM (HRAM) 	
+        FF80 	FFFE 	High _ram (H_ram) 	
         FFFF 	FFFF 	Interrupts Enable Register (IE) 	
         */
 
@@ -35,7 +30,7 @@ namespace GBCore
          DE    D    E    DE
          HL    H    L    HL
          SP    -    -    Stack Pointer
-         PC    -    -    Program Counter/Pointer
+         PC    -    -    Prog_ram Counter/Pointer
          */
 
     public enum Flags : byte
@@ -70,8 +65,8 @@ namespace GBCore
         public readonly byte[] REG = new byte[8];
 
         private string memTrace;
+        public byte[] _ram;
 
-        public byte[] RAM = new byte[0x10000];
         public const ushort DIV = 0xFF04;
         public const ushort TIMA = 0xFF05;
         public const ushort TMA = 0xFF06;
@@ -79,9 +74,7 @@ namespace GBCore
         int timerDivider = 0;
 
         public const ushort IRQ_FLAGS = 0xFF0F;
-        public const ushort IRQ_ENABLE = 0xFF0F;
-
-        public byte[] VRAM = new byte[0x10000];
+        public const ushort IRQ_ENABLE = 0xFF0F;               
 
         public ushort PC; // Program Counter
 
@@ -97,11 +90,10 @@ namespace GBCore
 
         public bool _haltState;
 
-        private OpcodesLookup opcodesLookup = new OpcodesLookup();
-
-        public CPU(bool traceEnabled)
+        public CPU(bool traceEnabled, byte[] ram)
         {
             _traceEnabled = traceEnabled;
+            _ram = ram;
             Reset();
         }
 
@@ -174,44 +166,39 @@ namespace GBCore
             return ((Flags)REG[F]).HasFlag(flag);
         }
 
-        private bool IsPlusCarry(byte a, byte operand)
+        private static bool IsPlusCarry(byte a, byte operand)
         {
             return (a + operand) > byte.MaxValue;
         }
 
-        private bool IsPlusCarry(ushort a, ushort operand)
-        {
-            return (a + operand) > ushort.MaxValue;
-        }
-
-        private bool IsPlusHalfCarry(byte a, byte operand)
+        private static bool IsPlusHalfCarry(byte a, byte operand)
         {
             return ((a & 0x0F) + (operand & 0x0F) & 0x10) > 0;
         }
 
-        private bool IsPlusHalfCarry(byte a, byte operand, byte carry)
+        private static bool IsPlusHalfCarry(byte a, byte operand, byte carry)
         {
             return (((a & 0x0F) + (operand & 0x0F) + (carry & 0xf)) & 0x10) > 0;
         }
 
-        private bool IsMinusHalfCarry(byte a, byte operand)
+        private static bool IsMinusHalfCarry(byte a, byte operand)
         {
             return ((a & 0x0F) - (operand & 0x0F) & 0x10) > 0;
         }
 
-        private bool IsMinusHalfCarry(byte a, byte operand, byte carry)
+        private static bool IsMinusHalfCarry(byte a, byte operand, byte carry)
         {
             return (((a & 0x0F) - (operand & 0x0F) - (carry & 0x0F)) & 0x10) > 0; 
         }
 
-        private bool IsPlusHalfCarryLowByte(ushort a, ushort operand)
+        private static bool IsPlusHalfCarryLowByte(ushort a, ushort operand)
         {
             byte lowA = (byte)(a & 0xFF);
             byte lowOp = (byte)(operand & 0xFF);
             return IsPlusHalfCarry(lowA, lowOp);
         }
 
-        private bool IsPlusHalfCarryHighByte(ushort a, ushort operand)
+        private static bool IsPlusHalfCarryHighByte(ushort a, ushort operand)
         {
             byte lowA = (byte)(a & 0xFF);
             byte lowOp = (byte)(operand & 0xFF);
@@ -221,18 +208,11 @@ namespace GBCore
             return IsPlusHalfCarry(highA, highOp, lowCarry);
         }
 
-        private bool IsMinusHalfCarryLowByte(ushort a, ushort operand)
+        private static bool IsMinusHalfCarryLowByte(ushort a, ushort operand)
         {
             byte lowA = (byte)(a & 0xFF);
             byte lowOp = (byte)(operand & 0xFF);
             return IsMinusHalfCarry(lowA, lowOp);
-        }
-
-        private bool IsMinusHalfCarryHighByte(ushort a, ushort operand)
-        {
-            byte highA = (byte)((a & 0xFF00) >> 8);
-            byte highOp = (byte)((operand & 0xFF00) >> 8);
-            return IsMinusHalfCarry(highA, highOp);
         }
 
         private void TimerTick(long ticks)
@@ -286,7 +266,7 @@ namespace GBCore
 
         private byte ReadMem(ushort addr)
         {
-            byte data = RAM[addr];
+            byte data = _ram[addr];
             memTrace += ($"{addr:X4} -> {data:X2} ");
 
             if (addr == 0xFF41)
@@ -305,29 +285,7 @@ namespace GBCore
                 data = 0x00;
             }
 
-            RAM[addr] = data;
-
-            //memTrace += ($"{addr:X4} <- {data:X2} ");
-
-            //if (addr == 0xFF01) // SB
-            //{
-            //    Console.WriteLine($"Serial: {data:X2}");
-            //    memTrace += "[Serial]";
-
-            //    //byte irqFlag = ReadMem(0xFF0F);
-            //    //irqFlag |= (byte)IrqFlags.Serial;
-            //    //WriteMem(0xFF0F, irqFlag);
-            //}
-
-            //if (addr == 0xFF01) // SC
-            //{
-            //    Console.WriteLine($"Serial End");
-            //}
-
-            //if (addr == 0xFF40)
-            //{
-            //    memTrace += "[LCDC]";
-            //}
+            _ram[addr] = data;
         }
 
         public void Reset()
@@ -342,45 +300,45 @@ namespace GBCore
 
             IME = true;
 
-            RAM[0xFF05] = 0x00;
-            RAM[0xFF06] = 0x00;
-            RAM[0xFF07] = 0x00;
-            RAM[0xFF10] = 0x80;
-            RAM[0xFF11] = 0xBF;
-            RAM[0xFF12] = 0xF3;
-            RAM[0xFF14] = 0xBF;
-            RAM[0xFF16] = 0x3F;
-            RAM[0xFF17] = 0x00;
-            RAM[0xFF19] = 0xBF;
-            RAM[0xFF1A] = 0x7F;
-            RAM[0xFF1B] = 0xFF;
-            RAM[0xFF1C] = 0x9F;
-            RAM[0xFF1E] = 0xBF;
-            RAM[0xFF20] = 0xFF;
-            RAM[0xFF21] = 0x00;
-            RAM[0xFF22] = 0x00;
-            RAM[0xFF23] = 0xBF;
-            RAM[0xFF24] = 0x77;
-            RAM[0xFF25] = 0xF3;
-            RAM[0xFF26] = 0xF1;
-            RAM[0xFF40] = 0x91;
-            RAM[0xFF42] = 0x00;
-            RAM[0xFF43] = 0x00;
-            RAM[0xFF45] = 0x00;
-            RAM[0xFF47] = 0xFC;
-            RAM[0xFF48] = 0xFF;
-            RAM[0xFF49] = 0xFF;
-            RAM[0xFF4A] = 0x00;
-            RAM[0xFF4B] = 0x00;
+            _ram[0xFF05] = 0x00;
+            _ram[0xFF06] = 0x00;
+            _ram[0xFF07] = 0x00;
+            _ram[0xFF10] = 0x80;
+            _ram[0xFF11] = 0xBF;
+            _ram[0xFF12] = 0xF3;
+            _ram[0xFF14] = 0xBF;
+            _ram[0xFF16] = 0x3F;
+            _ram[0xFF17] = 0x00;
+            _ram[0xFF19] = 0xBF;
+            _ram[0xFF1A] = 0x7F;
+            _ram[0xFF1B] = 0xFF;
+            _ram[0xFF1C] = 0x9F;
+            _ram[0xFF1E] = 0xBF;
+            _ram[0xFF20] = 0xFF;
+            _ram[0xFF21] = 0x00;
+            _ram[0xFF22] = 0x00;
+            _ram[0xFF23] = 0xBF;
+            _ram[0xFF24] = 0x77;
+            _ram[0xFF25] = 0xF3;
+            _ram[0xFF26] = 0xF1;
+            _ram[0xFF40] = 0x91;
+            _ram[0xFF42] = 0x00;
+            _ram[0xFF43] = 0x00;
+            _ram[0xFF45] = 0x00;
+            _ram[0xFF47] = 0xFC;
+            _ram[0xFF48] = 0xFF;
+            _ram[0xFF49] = 0xFF;
+            _ram[0xFF4A] = 0x00;
+            _ram[0xFF4B] = 0x00;
 
-            RAM[0xFFFF] |= (byte)IrqFlags.Joypad;
-            RAM[0xFFFF] |= (byte)IrqFlags.LcdStat;
-            RAM[0xFFFF] |= (byte)IrqFlags.Serial;
-            RAM[0xFFFF] |= (byte)IrqFlags.Timer;
-            RAM[0xFFFF] |= (byte)IrqFlags.VBlank;
+            _ram[0xFFFF] |= (byte)IrqFlags.Joypad;
+            _ram[0xFFFF] |= (byte)IrqFlags.LcdStat;
+            _ram[0xFFFF] |= (byte)IrqFlags.Serial;
+            _ram[0xFFFF] |= (byte)IrqFlags.Timer;
+            _ram[0xFFFF] |= (byte)IrqFlags.VBlank;
 
             // HACK
-            RAM[0xFF44] = 0x90;
+            _ram[0xFF44] = 0x90;
 
             _cycleCount = 0;
             RedrawFlag = false;
@@ -452,13 +410,13 @@ namespace GBCore
             RedrawFlag = false;
 
             // Load Opcode
-            byte opcode = RAM[PC];
+            byte opcode = _ram[PC];
 
             memTrace = string.Empty;
 
             if (_traceEnabled)
             {
-                Trace(opcode);
+                Trace();
             }
 
             long oldCycleCount = _cycleCount;
@@ -473,36 +431,8 @@ namespace GBCore
             IRQ();
         }
 
-        private void Trace(byte opcode)
-        {
-            //Console.Clear();
-            //Console.WriteLine("PC:{0:X4}", PC);
-            //Console.WriteLine("OP:{0:X2} {1,10} ", opcode, opcodesLookup.NonPrefix[opcode]);
-            //Console.WriteLine("AF:{0:x4} ", (REG[A] << 8) + REG[F]);
-            //Console.WriteLine("BC:{0:x4} ", (REG[B] << 8) + REG[C]);
-            //Console.WriteLine("DE:{0:x4} ", (REG[D] << 8) + REG[E]);
-            //Console.WriteLine("HL:{0:x4} ", (REG[H] << 8) + REG[L]);
-            //Console.WriteLine("SP:{0:x4} ", SP);
-            //Console.WriteLine("CNT:{0}", _cycleCount);
-            //Console.WriteLine(memTrace);
-
-            //Console.Write("{0:X4}:  ", PC);
-            //Console.Write("{0:X2} {1,10} ", opcode, opcodesLookup.NonPrefix[opcode]);
-
-            //Console.Write("A:{0:x2} ", REG[A]);
-            //Console.Write("B:{0:x2} ", REG[B]);
-            //Console.Write("C:{0:x2} ", REG[C]);
-            //Console.Write("D:{0:x2} ", REG[D]);
-            //Console.Write("E:{0:x2} ", REG[E]);
-            //Console.Write("F:{0:x2} ", REG[F]);
-            //Console.Write("H:{0:x2} ", REG[H]);
-            //Console.Write("L:{0:x2} ", REG[L]);
-            //Console.Write("LY:99 ");
-            //Console.Write("SP={0:x2}  ", SP);
-            //Console.Write("CY={0:d8} ", _cycleCount);
-            //Console.Write(memTrace);
-            //Console.WriteLine(string.Empty);
-
+        private void Trace()
+        {    
             Console.Write("A: {0:X2} ", REG[A]);
             Console.Write("F: {0:X2} ", REG[F]);
             Console.Write("B: {0:X2} ", REG[B]);
@@ -517,11 +447,11 @@ namespace GBCore
             Console.WriteLine(string.Empty);
         }
 
-        public void Load(byte[] programCode)
+        public void Load(byte[] prog_ramCode)
         {
-            for (int i = 0; i < programCode.Length; i++)
+            for (int i = 0; i < prog_ramCode.Length; i++)
             {
-                RAM[i] = programCode[i];
+                _ram[i] = prog_ramCode[i];
             }
         }
 
