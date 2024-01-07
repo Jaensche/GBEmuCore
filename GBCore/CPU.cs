@@ -64,14 +64,8 @@ namespace GBCore
         public const int A = 7;
         public readonly byte[] REG = new byte[8];
 
-        private string memTrace;
-        public byte[] _ram;
-
-        public const ushort DIV = 0xFF04;
-        public const ushort TIMA = 0xFF05;
-        public const ushort TMA = 0xFF06;
-        public const ushort TAC = 0xFF07;
-        int timerDivider = 0;
+        private Memory _ram;
+        private Timer _timer;
 
         public const ushort IRQ_FLAGS = 0xFF0F;
         public const ushort IRQ_ENABLE = 0xFF0F;               
@@ -90,10 +84,11 @@ namespace GBCore
 
         public bool _haltState;
 
-        public CPU(bool traceEnabled, byte[] ram)
+        public CPU(bool traceEnabled, Memory ram)
         {
             _traceEnabled = traceEnabled;
             _ram = ram;
+            _timer = new Timer(ram);
             Reset();
         }
 
@@ -147,146 +142,7 @@ namespace GBCore
                 REG[L] = (byte)(value & 0x00FF);
                 REG[H] = (byte)((value & 0xFF00) >> 8);
             }
-        }
-
-        private void SetFlag(Flags flag, bool input)
-        {
-            if (input)
-            {
-                REG[F] |= (byte)flag;
-            }
-            else
-            {
-                REG[F] &= (byte)~flag;
-            }
-        }
-
-        public bool IsSet(Flags flag)
-        {
-            return ((Flags)REG[F]).HasFlag(flag);
-        }
-
-        private static bool IsPlusCarry(byte a, byte operand)
-        {
-            return (a + operand) > byte.MaxValue;
-        }
-
-        private static bool IsPlusHalfCarry(byte a, byte operand)
-        {
-            return ((a & 0x0F) + (operand & 0x0F) & 0x10) > 0;
-        }
-
-        private static bool IsPlusHalfCarry(byte a, byte operand, byte carry)
-        {
-            return (((a & 0x0F) + (operand & 0x0F) + (carry & 0xf)) & 0x10) > 0;
-        }
-
-        private static bool IsMinusHalfCarry(byte a, byte operand)
-        {
-            return ((a & 0x0F) - (operand & 0x0F) & 0x10) > 0;
-        }
-
-        private static bool IsMinusHalfCarry(byte a, byte operand, byte carry)
-        {
-            return (((a & 0x0F) - (operand & 0x0F) - (carry & 0x0F)) & 0x10) > 0; 
-        }
-
-        private static bool IsPlusHalfCarryLowByte(ushort a, ushort operand)
-        {
-            byte lowA = (byte)(a & 0xFF);
-            byte lowOp = (byte)(operand & 0xFF);
-            return IsPlusHalfCarry(lowA, lowOp);
-        }
-
-        private static bool IsPlusHalfCarryHighByte(ushort a, ushort operand)
-        {
-            byte lowA = (byte)(a & 0xFF);
-            byte lowOp = (byte)(operand & 0xFF);
-            byte lowCarry = IsPlusCarry(lowA, lowOp) ? (byte) 1 : (byte) 0;
-            byte highA = (byte)((a & 0xFF00) >> 8);
-            byte highOp = (byte)((operand & 0xFF00) >> 8);
-            return IsPlusHalfCarry(highA, highOp, lowCarry);
-        }
-
-        private static bool IsMinusHalfCarryLowByte(ushort a, ushort operand)
-        {
-            byte lowA = (byte)(a & 0xFF);
-            byte lowOp = (byte)(operand & 0xFF);
-            return IsMinusHalfCarry(lowA, lowOp);
-        }
-
-        private void TimerTick(long ticks)
-        {
-            //for (long i = 0; i < ticks; i++)
-            {
-                timerDivider++;
-
-                byte tac = ReadMem(TAC);
-                byte inputClockSelect = (byte)(tac & 0b00000011);
-                bool timerEnable = (tac & 0b00000100) > 0;
-
-                if (timerEnable)
-                {
-                    byte tima = ReadMem(TIMA);
-
-                    if (tima == 0xFF)
-                    {
-                        // Reset TIMA and raise timer interrupt
-                        byte irqFlags = ReadMem(IRQ_FLAGS);
-                        WriteMem(IRQ_FLAGS, (byte)((byte)irqFlags | (byte)IrqFlags.Timer));
-                        WriteMem(TIMA, ReadMem(TMA));
-                    }
-                    else if (timerDivider % 64 == 0 && inputClockSelect == 0b00) // 1024
-                    {
-                        WriteMem(TIMA, (byte)(tima + 1));
-                    }
-                    else if (timerDivider % 32 == 0 && inputClockSelect == 0b11) // 256
-                    {
-                        WriteMem(TIMA, (byte)(tima + 1));
-                    }
-                    else if (timerDivider % 16 == 0 && inputClockSelect == 0b10) // 64
-                    {
-                        WriteMem(TIMA, (byte)(tima + 1));
-                    }
-                    else if (inputClockSelect == 0b01) // 16
-                    {
-                        WriteMem(TIMA, (byte)(tima + 1));
-                    }
-                }
-
-                // 16
-                WriteMem(DIV, (byte)(ReadMem(DIV) + 1));
-
-                if (timerDivider >= 64)
-                {
-                    timerDivider = 0;
-                }
-            }
-        }
-
-        private byte ReadMem(ushort addr)
-        {
-            byte data = _ram[addr];
-            memTrace += ($"{addr:X4} -> {data:X2} ");
-
-            if (addr == 0xFF41)
-            {
-                memTrace += "[STAT:]";
-            }
-
-            return data;
-        }
-
-        private void WriteMem(ushort addr, byte data)
-        {
-            //DIV - Divider Register - Always set to 0x00
-            if (addr == 0xFF04) 
-            {
-                data = 0x00;
-            }
-
-            _ram[addr] = data;
-        }
+        }        
 
         public void Reset()
         {
@@ -300,45 +156,45 @@ namespace GBCore
 
             IME = true;
 
-            _ram[0xFF05] = 0x00;
-            _ram[0xFF06] = 0x00;
-            _ram[0xFF07] = 0x00;
-            _ram[0xFF10] = 0x80;
-            _ram[0xFF11] = 0xBF;
-            _ram[0xFF12] = 0xF3;
-            _ram[0xFF14] = 0xBF;
-            _ram[0xFF16] = 0x3F;
-            _ram[0xFF17] = 0x00;
-            _ram[0xFF19] = 0xBF;
-            _ram[0xFF1A] = 0x7F;
-            _ram[0xFF1B] = 0xFF;
-            _ram[0xFF1C] = 0x9F;
-            _ram[0xFF1E] = 0xBF;
-            _ram[0xFF20] = 0xFF;
-            _ram[0xFF21] = 0x00;
-            _ram[0xFF22] = 0x00;
-            _ram[0xFF23] = 0xBF;
-            _ram[0xFF24] = 0x77;
-            _ram[0xFF25] = 0xF3;
-            _ram[0xFF26] = 0xF1;
-            _ram[0xFF40] = 0x91;
-            _ram[0xFF42] = 0x00;
-            _ram[0xFF43] = 0x00;
-            _ram[0xFF45] = 0x00;
-            _ram[0xFF47] = 0xFC;
-            _ram[0xFF48] = 0xFF;
-            _ram[0xFF49] = 0xFF;
-            _ram[0xFF4A] = 0x00;
-            _ram[0xFF4B] = 0x00;
+            _ram.WriteMem(0xFF05, 0x00);
+            _ram.WriteMem(0xFF06, 0x00);
+            _ram.WriteMem(0xFF07, 0x00);
+            _ram.WriteMem(0xFF10, 0x80);
+            _ram.WriteMem(0xFF11, 0xBF);
+            _ram.WriteMem(0xFF12, 0xF3);
+            _ram.WriteMem(0xFF14, 0xBF);
+            _ram.WriteMem(0xFF16, 0x3F);
+            _ram.WriteMem(0xFF17, 0x00);
+            _ram.WriteMem(0xFF19, 0xBF);
+            _ram.WriteMem(0xFF1A, 0x7F);
+            _ram.WriteMem(0xFF1B, 0xFF);
+            _ram.WriteMem(0xFF1C, 0x9F);
+            _ram.WriteMem(0xFF1E, 0xBF);
+            _ram.WriteMem(0xFF20, 0xFF);
+            _ram.WriteMem(0xFF21, 0x00);
+            _ram.WriteMem(0xFF22, 0x00);
+            _ram.WriteMem(0xFF23, 0xBF);
+            _ram.WriteMem(0xFF24, 0x77);
+            _ram.WriteMem(0xFF25, 0xF3);
+            _ram.WriteMem(0xFF26, 0xF1);
+            _ram.WriteMem(0xFF40, 0x91);
+            _ram.WriteMem(0xFF42, 0x00);
+            _ram.WriteMem(0xFF43, 0x00);
+            _ram.WriteMem(0xFF45, 0x00);
+            _ram.WriteMem(0xFF47, 0xFC);
+            _ram.WriteMem(0xFF48, 0xFF);
+            _ram.WriteMem(0xFF49, 0xFF);
+            _ram.WriteMem(0xFF4A, 0x00);
+            _ram.WriteMem(0xFF4B, 0x00);
 
-            _ram[0xFFFF] |= (byte)IrqFlags.Joypad;
-            _ram[0xFFFF] |= (byte)IrqFlags.LcdStat;
-            _ram[0xFFFF] |= (byte)IrqFlags.Serial;
-            _ram[0xFFFF] |= (byte)IrqFlags.Timer;
-            _ram[0xFFFF] |= (byte)IrqFlags.VBlank;
+            _ram.WriteMem(0xFFFF, (byte)(_ram.ReadMem(0xFFFF) | (byte)IrqFlags.Joypad));
+            _ram.WriteMem(0xFFFF, (byte)(_ram.ReadMem(0xFFFF) | (byte)IrqFlags.LcdStat));
+            _ram.WriteMem(0xFFFF, (byte)(_ram.ReadMem(0xFFFF) | (byte)IrqFlags.Serial));
+            _ram.WriteMem(0xFFFF, (byte)(_ram.ReadMem(0xFFFF) | (byte)IrqFlags.Timer));
+            _ram.WriteMem(0xFFFF, (byte)(_ram.ReadMem(0xFFFF) | (byte)IrqFlags.VBlank));
 
-            // HACK
-            _ram[0xFF44] = 0x90;
+            // Hack for initial FY
+            _ram.WriteMem(0xFF44, 0x90);
 
             _cycleCount = 0;
             RedrawFlag = false;
@@ -346,8 +202,8 @@ namespace GBCore
 
         private void CheckInterrupt(IrqFlags flag)
         {
-            var irqFlags = (IrqFlags)ReadMem(IRQ_FLAGS);
-            var irqEnable = (IrqFlags)ReadMem(IRQ_ENABLE);
+            var irqFlags = (IrqFlags)_ram.ReadMem(IRQ_FLAGS);
+            var irqEnable = (IrqFlags)_ram.ReadMem(IRQ_ENABLE);
 
             if (!IME && irqFlags.HasFlag(flag) && irqEnable.HasFlag(flag))
             {
@@ -368,7 +224,7 @@ namespace GBCore
                 Push16(PC);
 
                 // Reset flag
-                WriteMem(IRQ_FLAGS, (byte)((byte)irqFlags & (byte)~flag));
+                _ram.WriteMem(IRQ_FLAGS, (byte)((byte)irqFlags & (byte)~flag));
 
                 switch (flag)
                 {
@@ -410,9 +266,7 @@ namespace GBCore
             RedrawFlag = false;
 
             // Load Opcode
-            byte opcode = _ram[PC];
-
-            memTrace = string.Empty;
+            byte opcode = _ram.ReadMem(PC);
 
             if (_traceEnabled)
             {
@@ -425,7 +279,7 @@ namespace GBCore
             // Execute Opcode
             DecodeExecute(opcode);
 
-            TimerTick(_cycleCount - oldCycleCount);
+            _timer.TimerTick(_cycleCount - oldCycleCount);
 
             // handle interrupts
             IRQ();
@@ -443,360 +297,16 @@ namespace GBCore
             Console.Write("L: {0:X2} ", REG[L]);
             Console.Write("SP: {0:X4} ", SP);
             Console.Write("PC: 00:{0:X4} ", PC);
-            Console.Write("({0:X2} {1:X2} {2:X2} {3:X2})", ReadMem(PC), ReadMem((ushort)(PC + 1)), ReadMem((ushort)(PC + 2)), ReadMem((ushort)(PC + 3)));
+            Console.Write("({0:X2} {1:X2} {2:X2} {3:X2})", _ram.ReadMem(PC), _ram.ReadMem((ushort)(PC + 1)), _ram.ReadMem((ushort)(PC + 2)), _ram.ReadMem((ushort)(PC + 3)));
             Console.WriteLine(string.Empty);
         }
 
-        public void Load(byte[] prog_ramCode)
+        public void Load(byte[] programCode)
         {
-            for (int i = 0; i < prog_ramCode.Length; i++)
+            for (int i = 0; i < programCode.Length; i++)
             {
-                _ram[i] = prog_ramCode[i];
+                _ram.WriteMem((ushort)i, programCode[i]);
             }
-        }
-
-        private void DecodeExectueCB(byte opcode)
-        {
-            switch (opcode)
-            {
-
-                case 0x00: case 0x01: case 0x02: case 0x03: case 0x04: case 0x05: case 0x07:
-                    RLC_r(opcode); // RLC r
-                    break;
-                case 0x08: case 0x09: case 0x0A: case 0x0B: case 0x0C: case 0x0D: case 0x0F:
-                    RRC_r(opcode); // RRC r
-                    break;
-                case 0x10: case 0x11: case 0x12: case 0x13: case 0x14: case 0x15: case 0x17:
-                    RL_r(opcode); // RL r
-                    break;
-                case 0x18: case 0x19: case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1F:
-                    RR_r(opcode); // RR r
-                    break;
-                case 0x06:
-                    RLC_HL(); // RLC (HL)
-                    break;
-                // RRC (HL)
-                case 0x0E:
-                    RRC_HL();
-                    break;
-                // RL (HL)
-                case 0x16:
-                    RL_HL();
-                    break;
-                // RR (HL)
-                case 0x1E:
-                    RR_HL();
-                    break;
-                case 0x20: case 0x21: case 0x22: case 0x23: case 0x24: case 0x25: case 0x27:
-                    SLA_r(opcode);
-                    break;
-                case 0x28: case 0x29: case 0x2A: case 0x2B: case 0x2C: case 0x2D: case 0x2F:
-                    SRA_r(opcode);
-                    break;
-                case 0x26:
-                    SLA_HL(); // SLA (HL)
-                    break;
-                case 0x2E:
-                    SRA_HL();  // SRA_HL
-                    break;
-                case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x35: case 0x37:
-                    SWAP_r(opcode); break;
-                case 0x36: // SWAP (HL)
-                    SWAP_HL(opcode); break;
-                case 0x38: case 0x39: case 0x3A: case 0x3B: case 0x3C: case 0x3D: case 0x3F:
-                    SRL_r(opcode); break;
-                case 0x3E:
-                    SRL_HL(); break; // SRL (HL)
-                case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x47:
-                case 0x48: case 0x49: case 0x4A: case 0x4B: case 0x4C: case 0x4D: case 0x4F:
-                case 0x50: case 0x51: case 0x52: case 0x53: case 0x54: case 0x55: case 0x57:
-                case 0x58: case 0x59: case 0x5A: case 0x5B: case 0x5C: case 0x5D: case 0x5F:
-                case 0x60: case 0x61: case 0x62: case 0x63: case 0x64: case 0x65: case 0x67:
-                case 0x68: case 0x69: case 0x6A: case 0x6B: case 0x6C: case 0x6D: case 0x6F:
-                case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75: case 0x77:
-                case 0x78: case 0x79: case 0x7A: case 0x7B: case 0x7C: case 0x7D: case 0x7F:
-                    BIT_x_r8(opcode); // BIT X r8
-                    break;
-                case 0x46: case 0x4E: case 0x56: case 0x5E: case 0x66: case 0x6E: case 0x76: case 0x7E:
-                    BIT_X_HL(opcode); // BIT X (HL)
-                    break;
-                case 0x80: case 0x81: case 0x82: case 0x83: case 0x84: case 0x85: case 0x87:
-                case 0x88: case 0x89: case 0x8A: case 0x8B: case 0x8C: case 0x8D: case 0x8F:
-                case 0x90: case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x97:
-                case 0x98: case 0x99: case 0x9A: case 0x9B: case 0x9C: case 0x9D: case 0x9F:
-                case 0xA0: case 0xA1: case 0xA2: case 0xA3: case 0xA4: case 0xA5: case 0xA7:
-                case 0xA8: case 0xA9: case 0xAA: case 0xAB: case 0xAC: case 0xAD: case 0xAF:
-                case 0xB0: case 0xB1: case 0xB2: case 0xB3: case 0xB4: case 0xB5: case 0xB7:
-                case 0xB8: case 0xB9: case 0xBA: case 0xBB: case 0xBC: case 0xBD: case 0xBF:
-                    RES_X_r8(opcode); // RES X r8
-                    break;
-                case 0x86: case 0x8E: case 0x96: case 0x9E: case 0xA6: case 0xAE: case 0xB6: case 0xBE:
-                    RES_X_HL(opcode); // RES X (HL)
-                    break;
-                case 0xC0: case 0xC1: case 0xC2: case 0xC3: case 0xC4: case 0xC5: case 0xC7:
-                case 0xC8: case 0xC9: case 0xCA: case 0xCB: case 0xCC: case 0xCD: case 0xCF:
-                case 0xD0: case 0xD1: case 0xD2: case 0xD3: case 0xD4: case 0xD5: case 0xD7:
-                case 0xD8: case 0xD9: case 0xDA: case 0xDB: case 0xDC: case 0xDD: case 0xDF:
-                case 0xE0: case 0xE1: case 0xE2: case 0xE3: case 0xE4: case 0xE5: case 0xE7:
-                case 0xE8: case 0xE9: case 0xEA: case 0xEB: case 0xEC: case 0xED: case 0xEF:
-                case 0xF0: case 0xF1: case 0xF2: case 0xF3: case 0xF4: case 0xF5: case 0xF7:
-                case 0xF8: case 0xF9: case 0xFA: case 0xFB: case 0xFC: case 0xFD: case 0xFF:
-                    SET_X_r8(opcode); // SET X r8
-                    break;
-                case 0xC6: case 0xCE: case 0xD6: case 0xDE: case 0xE6: case 0xEE: case 0xF6: case 0xFE:
-                    SET_X_HL(opcode); // SET X (HL)
-                    break;
-                default:
-                    throw new NotImplementedException(opcode.ToString("X2"));
-            }
-        }
-
-        private void SWAP_HL(byte opcode)
-        {
-            HL = APU.SWP(HL);            
-        }
-
-        private void RLC_r(byte opcode)
-        {
-            int reg = opcode & 0b00001111;
-
-            REG[reg] = APU.ROT(REG[reg], ref REG[F], true, APU.Direction.Left);
-
-            PC++;
-            _cycleCount += 8;
-        }
-
-        private void RRC_r(byte opcode)
-        {
-            int reg = (opcode & 0b00001111) - 8;
-
-            REG[reg] = APU.ROT(REG[reg], ref REG[F], true, APU.Direction.Right);
-
-            PC++;
-            _cycleCount += 8;
-        }
-
-        private void RL_r(byte opcode)
-        {
-            int reg = opcode & 0b00001111;
-
-            REG[reg] = APU.ROT(REG[reg], ref REG[F], false, APU.Direction.Left);
-
-            PC++;
-            _cycleCount += 8;
-        }
-
-        private void RR_r(byte opcode)
-        {
-            int reg = (opcode & 0b00001111) - 8;
-
-            REG[reg] = APU.ROT(REG[reg], ref REG[F], false, APU.Direction.Right);
-
-            PC++;
-            _cycleCount += 8;
-        }
-
-        private void RLC_HL()
-        {
-            WriteMem(HL, APU.ROT(ReadMem(HL), ref REG[F], true, APU.Direction.Left));
-
-            PC++;
-            _cycleCount += 16;
-        }
-
-        private void RRC_HL()
-        {
-            WriteMem(HL, APU.ROT(ReadMem(HL), ref REG[F], true, APU.Direction.Right));
-
-            PC++;
-            _cycleCount += 16;
-        }
-
-        private void RL_HL()
-        {
-            WriteMem(HL, APU.ROT(ReadMem(HL), ref REG[F], false, APU.Direction.Left));
-
-            PC++;
-            _cycleCount += 16;
-        }
-
-        private void RR_HL()
-        {
-            byte result = APU.ROT(ReadMem(HL), ref REG[F], false, APU.Direction.Right);
-            WriteMem(HL, result);
-
-            PC++;
-            _cycleCount += 16;
-        }
-
-        private void SET_X_HL(byte opcode)
-        {
-            byte x = (byte)((opcode & 0b00111000) >> 3);
-
-            WriteMem(HL, (byte)(ReadMem(HL) | (0b00000001 << x)));
-
-            PC++;
-            _cycleCount += 8;
-        }
-
-        private void SET_X_r8(byte opcode)
-        {
-            int reg = opcode & 0b00000111;
-            byte x = (byte)((opcode & 0b00111000) >> 3);
-
-            REG[reg] |= (byte)(0b00000001 << x);
-
-            PC++;
-            _cycleCount += 8;
-        }
-
-        private void RES_X_HL(byte opcode)
-        {
-            byte x = (byte)((opcode & 0b00111000) >> 3);
-
-            WriteMem(HL, (byte)(ReadMem(HL) & (0b11111110 << x)));
-
-            PC++;
-            _cycleCount += 8;
-        }
-
-        private void RES_X_r8(byte opcode) // Reset bit X to 0
-        {
-            int reg = opcode & 0b00000111;
-            byte x = (byte)((opcode & 0b00111000) >> 3);
-
-            REG[reg] = (byte)(REG[reg] & ~(byte)(0b00000001 << x));
-
-            PC++;
-            _cycleCount += 8;
-        }
-
-        private void BIT_X_HL(byte opcode)
-        {
-            byte x = (byte)((opcode & 0b00111000) >> 3);
-
-            SetFlag(Flags.Z, (ReadMem(HL) & (0b00000001 << x)) == 0);
-            SetFlag(Flags.N, false);
-            SetFlag(Flags.H, true);
-
-            PC++;
-            _cycleCount += 8;
-        }
-
-        private void BIT_x_r8(byte opcode)
-        {
-            int reg = opcode & 0b00000111;
-            byte x = (byte)((opcode & 0b00111000) >> 3);
-
-            SetFlag(Flags.Z, (REG[reg] & (0b00000001 << x)) == 0);
-            SetFlag(Flags.N, false);
-            SetFlag(Flags.H, true);
-
-            PC++;
-            _cycleCount += 8;
-        }
-
-        private void SRL_HL()
-        {
-            byte result = (byte)(ReadMem(HL) >> 1);
-            SetFlag(Flags.C, (ReadMem(HL) & 0x01) > 0);
-            WriteMem(HL, result);
-
-            SetFlag(Flags.Z, result == 0);
-            SetFlag(Flags.N, false);
-            SetFlag(Flags.H, false);
-
-            PC++;
-            _cycleCount += 16;
-        }
-
-        private void SRL_r(byte opcode)
-        {
-            int reg = (opcode & 0b00001111) - 8;
-
-            SetFlag(Flags.C, (REG[reg] & 0b00000001) > 0);
-
-            REG[reg] = (byte)(REG[reg] >> 1 & 0x7F);
-
-            SetFlag(Flags.Z, REG[reg] == 0);
-            SetFlag(Flags.N, false);
-            SetFlag(Flags.H, false);
-
-            PC++;
-            _cycleCount += 8;
-        }
-
-        private void SWAP_r(byte opcode)
-        {
-            int reg = opcode & 0b00000111;
-
-            REG[reg] = APU.SWP(REG[reg]);
-
-            SetFlag(Flags.Z, REG[reg] == 0);
-            SetFlag(Flags.N, false);
-            SetFlag(Flags.H, false);
-            SetFlag(Flags.C, false);
-
-            PC++;
-            _cycleCount += 8;
-        }
-
-        private void SRA_HL()
-        {
-            byte result = (byte)(ReadMem(HL) >> 1);
-            SetFlag(Flags.C, ((ReadMem(HL) & 0x01) > 0));
-            WriteMem(HL, result);
-
-            SetFlag(Flags.Z, result == 0);
-            SetFlag(Flags.N, false);
-            SetFlag(Flags.H, false);
-
-            PC++;
-            _cycleCount += 16;
-        }
-
-        private void SLA_HL()
-        {
-            byte result = (byte)(ReadMem(HL) << 1);
-            SetFlag(Flags.C, (ReadMem(HL) & 0b10000000) > 0);
-            WriteMem(HL, result);
-
-            SetFlag(Flags.Z, result == 0);
-            SetFlag(Flags.N, false);
-            SetFlag(Flags.H, false);
-
-            PC++;
-            _cycleCount += 16;
-        }
-
-        private void SRA_r(byte opcode)
-        {
-            int reg = opcode & 0b00000111;
-
-            SetFlag(Flags.C, (REG[reg] & 0b00000001) > 0);
-            REG[reg] = (byte)((REG[reg] & (1 << 7)) | (REG[reg] >> 1));
-
-            SetFlag(Flags.Z, REG[reg] == 0);
-            SetFlag(Flags.N, false);
-            SetFlag(Flags.H, false);
-
-            PC++;
-            _cycleCount += 8;
-        }
-
-        private void SLA_r(byte opcode)
-        {
-            int reg = opcode & 0b00000111;
-
-            SetFlag(Flags.C, (REG[reg] & 0b10000000) > 0);
-            REG[reg] = (byte)(REG[reg] << 1);
-
-            SetFlag(Flags.Z, REG[reg] == 0);
-            SetFlag(Flags.N, false);
-            SetFlag(Flags.H, false);
-
-            PC++;
-            _cycleCount += 8;
         }
 
         private void DecodeExecute(byte opcode)
@@ -813,7 +323,7 @@ namespace GBCore
                     {
                         PC++;
                         _cycleCount += 4;
-                    }                    
+                    }
                     break;
 
                 // STOP
@@ -823,7 +333,7 @@ namespace GBCore
 
                 // HALT
                 case 0x76:
-                    if(!_haltState)
+                    if (!_haltState)
                     {
                         _haltState = true;
                         PC++;
@@ -847,7 +357,7 @@ namespace GBCore
                 // PREFIX CB
                 case 0xCB:
                     PC++;
-                    DecodeExectueCB(ReadMem(PC));
+                    DecodeExectueCB(_ram.ReadMem(PC));
                     break;
 
                 /********************************
@@ -855,27 +365,88 @@ namespace GBCore
                  ********************************/
 
                 // LD Rx, Ry
-                case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x47: case 0x48: case 0x49: case 0x4A: case 0x4B: case 0x4C: case 0x4D: case 0x4F:
-                case 0x50: case 0x51: case 0x52: case 0x53: case 0x54: case 0x55: case 0x57: case 0x58: case 0x59: case 0x5A: case 0x5B: case 0x5C: case 0x5D: case 0x5F:
-                case 0x60: case 0x61: case 0x62: case 0x63: case 0x64: case 0x65: case 0x67: case 0x68: case 0x69: case 0x6A: case 0x6B: case 0x6C: case 0x6D: case 0x6F:
-                case 0x78: case 0x79: case 0x7A: case 0x7B: case 0x7C: case 0x7D: case 0x7F:
+                case 0x40:
+                case 0x41:
+                case 0x42:
+                case 0x43:
+                case 0x44:
+                case 0x45:
+                case 0x47:
+                case 0x48:
+                case 0x49:
+                case 0x4A:
+                case 0x4B:
+                case 0x4C:
+                case 0x4D:
+                case 0x4F:
+                case 0x50:
+                case 0x51:
+                case 0x52:
+                case 0x53:
+                case 0x54:
+                case 0x55:
+                case 0x57:
+                case 0x58:
+                case 0x59:
+                case 0x5A:
+                case 0x5B:
+                case 0x5C:
+                case 0x5D:
+                case 0x5F:
+                case 0x60:
+                case 0x61:
+                case 0x62:
+                case 0x63:
+                case 0x64:
+                case 0x65:
+                case 0x67:
+                case 0x68:
+                case 0x69:
+                case 0x6A:
+                case 0x6B:
+                case 0x6C:
+                case 0x6D:
+                case 0x6F:
+                case 0x78:
+                case 0x79:
+                case 0x7A:
+                case 0x7B:
+                case 0x7C:
+                case 0x7D:
+                case 0x7F:
                     LR_RxRy(opcode);
                     break;
 
                 // LD Rx, n
-                case 0x06: case 0x16: case 0x26:
-                case 0x0E: case 0x1E: case 0x2E: case 0x3E:
+                case 0x06:
+                case 0x16:
+                case 0x26:
+                case 0x0E:
+                case 0x1E:
+                case 0x2E:
+                case 0x3E:
                     LR_Rx_n(opcode);
                     break;
 
                 // LD Rx, (HL)
-                case 0x46: case 0x56: case 0x66:
-                case 0x4E: case 0x5E: case 0x6E: case 0x7E:
+                case 0x46:
+                case 0x56:
+                case 0x66:
+                case 0x4E:
+                case 0x5E:
+                case 0x6E:
+                case 0x7E:
                     LR_Rx_HL(opcode);
                     break;
 
                 // LD (HL), Rx
-                case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75: case 0x77:
+                case 0x70:
+                case 0x71:
+                case 0x72:
+                case 0x73:
+                case 0x74:
+                case 0x75:
+                case 0x77:
                     LD_HL_Rx(opcode);
                     break;
 
@@ -887,7 +458,7 @@ namespace GBCore
                 // LD A, (BC)
                 case 0x0A:
                     {
-                        REG[A] = ReadMem(BC);
+                        REG[A] = _ram.ReadMem(BC);
                         PC++;
                         _cycleCount += 8;
                     }
@@ -896,7 +467,7 @@ namespace GBCore
                 // LD A, (DE)
                 case 0x1A:
                     {
-                        REG[A] = ReadMem(DE);
+                        REG[A] = _ram.ReadMem(DE);
                         PC++;
                         _cycleCount += 8;
                     }
@@ -905,7 +476,7 @@ namespace GBCore
                 // LD (BC), A
                 case 0x02:
                     {
-                        WriteMem(BC, REG[A]);
+                        _ram.WriteMem(BC, REG[A]);
                         PC++;
                         _cycleCount += 8;
                     }
@@ -914,7 +485,7 @@ namespace GBCore
                 // LD (DE), A
                 case 0x12:
                     {
-                        WriteMem(DE, REG[A]);
+                        _ram.WriteMem(DE, REG[A]);
                         PC++;
                         _cycleCount += 8;
                     }
@@ -923,8 +494,8 @@ namespace GBCore
                 // LD A, (nn)
                 case 0xFA:
                     {
-                        ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
-                        REG[A] = ReadMem(addr);
+                        ushort addr = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
+                        REG[A] = _ram.ReadMem(addr);
                         PC++;
                         _cycleCount += 8;
                     }
@@ -933,11 +504,10 @@ namespace GBCore
                 // LD HL, SP+r8
                 case 0xF8:
                     {
-                        sbyte op = (sbyte)ReadMem(++PC);
+                        sbyte op = (sbyte)_ram.ReadMem(++PC);
 
                         SetFlag(Flags.N, false);
                         SetFlag(Flags.Z, false);
-                        //SetFlag(Flags.H, IsPlusHalfCarry((byte)(SP & 0x00FF), (byte)op));
                         SetFlag(Flags.H, IsPlusHalfCarryLowByte(SP, (byte)op));
                         SetFlag(Flags.C, IsPlusCarry((byte)(SP & 0x00FF), (byte)op));
 
@@ -950,8 +520,8 @@ namespace GBCore
                 // LD (nn), A
                 case 0xEA:
                     {
-                        ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
-                        WriteMem(addr, REG[A]);
+                        ushort addr = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
+                        _ram.WriteMem(addr, REG[A]);
                         PC++;
                         _cycleCount += 8;
                     }
@@ -961,7 +531,7 @@ namespace GBCore
                 case 0xF2:
                     {
                         ushort addr = (ushort)(0xFF00 + REG[C]);
-                        REG[A] = ReadMem(addr);
+                        REG[A] = _ram.ReadMem(addr);
                         PC++;
                         _cycleCount += 8;
                     }
@@ -971,7 +541,7 @@ namespace GBCore
                 case 0xE2:
                     {
                         ushort addr = (ushort)(0xFF00 + REG[C]);
-                        WriteMem(addr, REG[A]);
+                        _ram.WriteMem(addr, REG[A]);
                         PC++;
                         _cycleCount += 8;
                     }
@@ -980,8 +550,8 @@ namespace GBCore
                 // LDH A, (n)
                 case 0xF0:
                     {
-                        ushort addr = (ushort)(0xFF00 + ReadMem(++PC));
-                        REG[A] = ReadMem(addr);
+                        ushort addr = (ushort)(0xFF00 + _ram.ReadMem(++PC));
+                        REG[A] = _ram.ReadMem(addr);
                         PC++;
                         _cycleCount += 12;
                     }
@@ -990,8 +560,8 @@ namespace GBCore
                 // LDH (n), A
                 case 0xE0:
                     {
-                        ushort addr = (ushort)(0xFF00 + ReadMem(++PC));
-                        WriteMem(addr, REG[A]);
+                        ushort addr = (ushort)(0xFF00 + _ram.ReadMem(++PC));
+                        _ram.WriteMem(addr, REG[A]);
 
                         if (REG[A] == 0xC0)
                         {
@@ -1005,7 +575,7 @@ namespace GBCore
                 // LD A, (HL-)
                 case 0x3A:
                     {
-                        REG[A] = ReadMem(HL--);
+                        REG[A] = _ram.ReadMem(HL--);
                         PC++;
                         _cycleCount += 8;
                     }
@@ -1014,7 +584,7 @@ namespace GBCore
                 // LD (HL-), A
                 case 0x32:
                     {
-                        WriteMem(HL--, REG[A]);
+                        _ram.WriteMem(HL--, REG[A]);
                         PC++;
                         _cycleCount += 8;
                     }
@@ -1023,7 +593,7 @@ namespace GBCore
                 // LD A, (HL++)
                 case 0x2A:
                     {
-                        REG[A] = ReadMem(HL++);
+                        REG[A] = _ram.ReadMem(HL++);
                         PC++;
                         _cycleCount += 8;
                     }
@@ -1032,7 +602,7 @@ namespace GBCore
                 // LD (HL++), A
                 case 0x22:
                     {
-                        WriteMem(HL++, REG[A]);
+                        _ram.WriteMem(HL++, REG[A]);
                         PC++;
                         _cycleCount += 8;
                     }
@@ -1041,7 +611,7 @@ namespace GBCore
                 // LD BC, nn
                 case 0x01:
                     {
-                        BC = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
+                        BC = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
                         PC++;
                         _cycleCount += 12;
                     }
@@ -1050,7 +620,7 @@ namespace GBCore
                 // LD DE, nn
                 case 0x11:
                     {
-                        DE = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
+                        DE = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
                         PC++;
                         _cycleCount += 12;
                     }
@@ -1059,7 +629,7 @@ namespace GBCore
                 // LD HL, nn
                 case 0x21:
                     {
-                        HL = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
+                        HL = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
                         PC++;
                         _cycleCount += 12;
                     }
@@ -1068,7 +638,7 @@ namespace GBCore
                 // LD SP, nn
                 case 0x31:
                     {
-                        SP = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
+                        SP = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
                         PC++;
                         _cycleCount += 12;
                     }
@@ -1077,9 +647,9 @@ namespace GBCore
                 // LD(nn), SP
                 case 0x08:
                     {
-                        ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
-                        WriteMem(addr, (byte)(SP & 0x00FF));                        
-                        WriteMem((ushort)(addr + 1), (byte)((SP & 0xFF00) >> 8));
+                        ushort addr = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
+                        _ram.WriteMem(addr, (byte)(SP & 0x00FF));
+                        _ram.WriteMem((ushort)(addr + 1), (byte)((SP & 0xFF00) >> 8));
                         PC++;
                         _cycleCount += 20;
                     }
@@ -1098,26 +668,22 @@ namespace GBCore
                  * Stack
                  ********************************/
 
-                        // PUSH Rx
-                case 0xC5: case 0xD5: case 0xE5:
+                // PUSH Rx
+                case 0xC5:
+                case 0xD5:
+                case 0xE5:
                     {
                         byte x = (byte)((opcode & 0b00110000) >> 3);
 
-                        //WriteMem(--SP, REG[x]);
-                        //WriteMem(--SP, REG[x + 1]);
                         Push16((ushort)((REG[x] << 8) + REG[x + 1]));
                         PC++;
                         _cycleCount += 16;
                     }
                     break;
-                
+
                 // PUSH AF
                 case 0xF5:
                     {
-                        //byte x = (byte)((opcode & 0b00110000) >> 3);
-
-                        //WriteMem(--SP, REG[x]);
-                        //WriteMem(--SP, REG[x + 1]);
                         Push16((ushort)((REG[A] << 8) + REG[F]));
                         PC++;
                         _cycleCount += 16;
@@ -1125,7 +691,9 @@ namespace GBCore
                     break;
 
                 // POP Rx
-                case 0xC1: case 0xD1: case 0xE1:
+                case 0xC1:
+                case 0xD1:
+                case 0xE1:
                     {
                         byte x = (byte)((opcode & 0b00110000) >> 3);
 
@@ -1136,7 +704,7 @@ namespace GBCore
                         _cycleCount += 12;
                     }
                     break;
-                
+
                 // POP AF
                 case 0xF1:
                     {
@@ -1153,7 +721,13 @@ namespace GBCore
                  ********************************/
 
                 // INC Rx
-                case 0x04: case 0x14: case 0x24: case 0x0C: case 0x1C: case 0x2C: case 0x3C:
+                case 0x04:
+                case 0x14:
+                case 0x24:
+                case 0x0C:
+                case 0x1C:
+                case 0x2C:
+                case 0x3C:
                     {
                         byte x = (byte)((opcode & 0b00111000) >> 3);
                         SetFlag(Flags.H, IsPlusHalfCarry(REG[x], 1));
@@ -1166,7 +740,13 @@ namespace GBCore
                     break;
 
                 // DEC Rx
-                case 0x05: case 0x15: case 0x25: case 0x0D: case 0x1D: case 0x2D: case 0x3D:
+                case 0x05:
+                case 0x15:
+                case 0x25:
+                case 0x0D:
+                case 0x1D:
+                case 0x2D:
+                case 0x3D:
                     {
                         byte x = (byte)((opcode & 0b00111000) >> 3);
                         SetFlag(Flags.H, IsMinusHalfCarry(REG[x], (byte)(REG[x] - 1)));
@@ -1253,10 +833,10 @@ namespace GBCore
                 // INC (HL)
                 case 0x34:
                     {
-                        byte currentHL = ReadMem(HL);
+                        byte currentHL = _ram.ReadMem(HL);
                         SetFlag(Flags.H, IsPlusHalfCarry(currentHL, 1));
                         byte result = (byte)(currentHL + 1);
-                        WriteMem(HL, result);
+                        _ram.WriteMem(HL, result);
 
                         SetFlag(Flags.Z, result == 0);
                         SetFlag(Flags.N, false);
@@ -1269,9 +849,9 @@ namespace GBCore
                 // DEC (HL)
                 case 0x35:
                     {
-                        byte currentHL = ReadMem(HL);
+                        byte currentHL = _ram.ReadMem(HL);
                         byte result = (byte)(currentHL - 1);
-                        WriteMem(HL, result);
+                        _ram.WriteMem(HL, result);
 
                         SetFlag(Flags.Z, result == 0);
                         SetFlag(Flags.N, true);
@@ -1343,7 +923,13 @@ namespace GBCore
                     break;
 
                 // ADD A, r8
-                case 0x80: case 0x81: case 0x82: case 0x83: case 0x84: case 0x85: case 0x87:
+                case 0x80:
+                case 0x81:
+                case 0x82:
+                case 0x83:
+                case 0x84:
+                case 0x85:
+                case 0x87:
                     {
                         int reg = opcode & 0b00000111;
                         SetFlag(Flags.N, false);
@@ -1361,7 +947,7 @@ namespace GBCore
                 // ADD A, d8
                 case 0xC6:
                     {
-                        byte value = ReadMem(++PC);
+                        byte value = _ram.ReadMem(++PC);
                         SetFlag(Flags.N, false);
                         SetFlag(Flags.H, IsPlusHalfCarry(REG[A], value));
                         SetFlag(Flags.C, REG[A] + value > 0xFF);
@@ -1377,7 +963,7 @@ namespace GBCore
                 // ADD SP, r8
                 case 0xE8:
                     {
-                        sbyte value = (sbyte)ReadMem(++PC);
+                        sbyte value = (sbyte)_ram.ReadMem(++PC);
                         SetFlag(Flags.N, false);
                         SetFlag(Flags.H, IsPlusHalfCarryLowByte(SP, (ushort)value));
                         SetFlag(Flags.C, IsPlusCarry((byte)(SP & 0x00FF), (byte)value));
@@ -1391,7 +977,13 @@ namespace GBCore
                     break;
 
                 // ADC A, r8
-                case 0x88: case 0x89: case 0x8A: case 0x8B: case 0x8C: case 0x8D: case 0x8F:
+                case 0x88:
+                case 0x89:
+                case 0x8A:
+                case 0x8B:
+                case 0x8C:
+                case 0x8D:
+                case 0x8F:
                     {
                         int reg = opcode & 0b00000111;
                         byte carry = IsSet(Flags.C) ? (byte)1 : (byte)0;
@@ -1411,13 +1003,13 @@ namespace GBCore
                 // ADC A, d8
                 case 0xCE:
                     {
-                        byte val = ReadMem(++PC);
+                        byte val = _ram.ReadMem(++PC);
                         byte carry = IsSet(Flags.C) ? (byte)1 : (byte)0;
                         SetFlag(Flags.N, false);
 
-                        bool halfcarry = IsPlusHalfCarry(REG[A], val, carry); //((REG[A] & 0x0F) + (val & 0x0F) + carry) > 0x0F;
+                        bool halfcarry = IsPlusHalfCarry(REG[A], val, carry);
                         SetFlag(Flags.H, halfcarry);
-                        
+
                         bool newCarry = (REG[A] + val + carry) > 0xFF;
                         REG[A] += (byte)(val + carry);
                         SetFlag(Flags.C, newCarry);
@@ -1431,7 +1023,7 @@ namespace GBCore
                 // ADC A, (HL)
                 case 0x8E:
                     {
-                        byte val = ReadMem(HL);
+                        byte val = _ram.ReadMem(HL);
                         byte carry = IsSet(Flags.C) ? (byte)1 : (byte)0;
                         SetFlag(Flags.N, false);
                         SetFlag(Flags.H, IsPlusHalfCarry(REG[A], val, carry));
@@ -1449,10 +1041,10 @@ namespace GBCore
                 case 0x86:
                     {
                         SetFlag(Flags.N, false);
-                        SetFlag(Flags.H, IsPlusHalfCarry(REG[A], ReadMem(HL)));
-                        SetFlag(Flags.C, REG[A] + ReadMem(HL) > 0xFF);
+                        SetFlag(Flags.H, IsPlusHalfCarry(REG[A], _ram.ReadMem(HL)));
+                        SetFlag(Flags.C, REG[A] + _ram.ReadMem(HL) > 0xFF);
 
-                        REG[A] += ReadMem(HL);
+                        REG[A] += _ram.ReadMem(HL);
                         SetFlag(Flags.Z, REG[A] == 0);
 
                         PC++;
@@ -1461,7 +1053,13 @@ namespace GBCore
                     break;
 
                 // SUB A, r8
-                case 0x90: case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x97:
+                case 0x90:
+                case 0x91:
+                case 0x92:
+                case 0x93:
+                case 0x94:
+                case 0x95:
+                case 0x97:
                     {
                         int reg = opcode & 0b00000111;
                         SetFlag(Flags.N, true);
@@ -1479,7 +1077,7 @@ namespace GBCore
                 // SUB A, d8
                 case 0xD6:
                     {
-                        byte value = ReadMem(++PC);
+                        byte value = _ram.ReadMem(++PC);
                         SetFlag(Flags.N, true);
                         SetFlag(Flags.H, IsMinusHalfCarry(REG[A], value));
                         SetFlag(Flags.C, REG[A] - value < 0);
@@ -1493,7 +1091,13 @@ namespace GBCore
                     break;
 
                 // SBC A, r8
-                case 0x98: case 0x99: case 0x9A: case 0x9B: case 0x9C: case 0x9D: case 0x9F:
+                case 0x98:
+                case 0x99:
+                case 0x9A:
+                case 0x9B:
+                case 0x9C:
+                case 0x9D:
+                case 0x9F:
                     {
                         int reg = opcode & 0b00000111;
                         byte val = REG[reg];
@@ -1513,7 +1117,7 @@ namespace GBCore
                 // SBC A, d8
                 case 0xDE:
                     {
-                        byte val = ReadMem(++PC);
+                        byte val = _ram.ReadMem(++PC);
                         byte carry = IsSet(Flags.C) ? (byte)1 : (byte)0;
                         SetFlag(Flags.N, true);
                         SetFlag(Flags.H, IsMinusHalfCarry(REG[A], val, carry));
@@ -1530,7 +1134,7 @@ namespace GBCore
                 // SBC A, (HL)
                 case 0x9E:
                     {
-                        byte val = ReadMem(HL);
+                        byte val = _ram.ReadMem(HL);
                         byte carry = IsSet(Flags.C) ? (byte)1 : (byte)0;
                         SetFlag(Flags.N, true);
                         SetFlag(Flags.H, IsMinusHalfCarry(REG[A], val, carry));
@@ -1548,10 +1152,10 @@ namespace GBCore
                 case 0x96:
                     {
                         SetFlag(Flags.N, true);
-                        SetFlag(Flags.H, IsMinusHalfCarry(REG[A], ReadMem(HL)));
-                        SetFlag(Flags.C, REG[A] - ReadMem(HL) < 0);
+                        SetFlag(Flags.H, IsMinusHalfCarry(REG[A], _ram.ReadMem(HL)));
+                        SetFlag(Flags.C, REG[A] - _ram.ReadMem(HL) < 0);
 
-                        REG[A] -= ReadMem(HL);
+                        REG[A] -= _ram.ReadMem(HL);
                         SetFlag(Flags.Z, REG[A] == 0);
 
                         PC++;
@@ -1560,7 +1164,13 @@ namespace GBCore
                     break;
 
                 // AND A, r8
-                case 0xA0: case 0xA1: case 0xA2: case 0xA3: case 0xA4: case 0xA5: case 0xA7:
+                case 0xA0:
+                case 0xA1:
+                case 0xA2:
+                case 0xA3:
+                case 0xA4:
+                case 0xA5:
+                case 0xA7:
                     {
                         int reg = opcode & 0b00000111;
                         SetFlag(Flags.N, false);
@@ -1578,7 +1188,7 @@ namespace GBCore
                 // AND A, d8
                 case 0xE6:
                     {
-                        byte value = ReadMem(++PC);
+                        byte value = _ram.ReadMem(++PC);
                         SetFlag(Flags.N, false);
                         SetFlag(Flags.H, true);
                         SetFlag(Flags.C, false);
@@ -1598,7 +1208,7 @@ namespace GBCore
                         SetFlag(Flags.H, true);
                         SetFlag(Flags.C, false);
 
-                        REG[A] &= ReadMem(HL);
+                        REG[A] &= _ram.ReadMem(HL);
                         SetFlag(Flags.Z, REG[A] == 0);
 
                         PC++;
@@ -1607,7 +1217,13 @@ namespace GBCore
                     break;
 
                 // OR A, r8
-                case 0xB0: case 0xB1: case 0xB2: case 0xB3: case 0xB4: case 0xB5: case 0xB7:
+                case 0xB0:
+                case 0xB1:
+                case 0xB2:
+                case 0xB3:
+                case 0xB4:
+                case 0xB5:
+                case 0xB7:
                     {
                         int reg = opcode & 0b00000111;
                         SetFlag(Flags.N, false);
@@ -1625,7 +1241,7 @@ namespace GBCore
                 // OR A, d8
                 case 0xF6:
                     {
-                        byte value = ReadMem(++PC);
+                        byte value = _ram.ReadMem(++PC);
                         SetFlag(Flags.N, false);
                         SetFlag(Flags.H, false);
                         SetFlag(Flags.C, false);
@@ -1645,7 +1261,7 @@ namespace GBCore
                         SetFlag(Flags.H, false);
                         SetFlag(Flags.C, false);
 
-                        REG[A] |= ReadMem(HL);
+                        REG[A] |= _ram.ReadMem(HL);
                         SetFlag(Flags.Z, REG[A] == 0);
 
                         PC++;
@@ -1654,7 +1270,13 @@ namespace GBCore
                     break;
 
                 // XOR A, r8
-                case 0xA8: case 0xA9: case 0xAA: case 0xAB: case 0xAC: case 0xAD: case 0xAF:
+                case 0xA8:
+                case 0xA9:
+                case 0xAA:
+                case 0xAB:
+                case 0xAC:
+                case 0xAD:
+                case 0xAF:
                     {
                         int reg = opcode & 0b00000111;
                         SetFlag(Flags.N, false);
@@ -1676,7 +1298,7 @@ namespace GBCore
                         SetFlag(Flags.H, false);
                         SetFlag(Flags.C, false);
 
-                        REG[A] ^= ReadMem(++PC);
+                        REG[A] ^= _ram.ReadMem(++PC);
                         SetFlag(Flags.Z, REG[A] == 0);
 
                         PC++;
@@ -1691,7 +1313,7 @@ namespace GBCore
                         SetFlag(Flags.H, false);
                         SetFlag(Flags.C, false);
 
-                        REG[A] ^= ReadMem(HL);
+                        REG[A] ^= _ram.ReadMem(HL);
                         SetFlag(Flags.Z, REG[A] == 0);
 
                         PC++;
@@ -1700,7 +1322,13 @@ namespace GBCore
                     break;
 
                 // CP A, r8 
-                case 0xB8: case 0xB9: case 0xBA: case 0xBB: case 0xBC: case 0xBD: case 0xBF:
+                case 0xB8:
+                case 0xB9:
+                case 0xBA:
+                case 0xBB:
+                case 0xBC:
+                case 0xBD:
+                case 0xBF:
                     {
                         int reg = (opcode & 0b00000111);
                         byte val = (byte)(REG[reg]); //+ (IsSet(Flags.C) ? 1 : 0));
@@ -1718,8 +1346,8 @@ namespace GBCore
                 // CP A, d8
                 case 0xFE:
                     {
-                        //byte val = (byte)(ReadMem(++PC) + (IsSet(Flags.C) ? 1 : 0));
-                        byte val = ReadMem(++PC);
+                        //byte val = (byte)(_ram.ReadMem(++PC) + (IsSet(Flags.C) ? 1 : 0));
+                        byte val = _ram.ReadMem(++PC);
                         SetFlag(Flags.N, true);
                         SetFlag(Flags.H, IsMinusHalfCarry(REG[A], val));
                         SetFlag(Flags.C, REG[A] - val < 0);
@@ -1734,7 +1362,7 @@ namespace GBCore
                 // CP A, (HL)
                 case 0xBE:
                     {
-                        byte val = ReadMem(HL);
+                        byte val = _ram.ReadMem(HL);
                         //byte carry = IsSet(Flags.C) ? (byte)1 : (byte)0;
                         SetFlag(Flags.N, true);
                         SetFlag(Flags.H, IsMinusHalfCarry(REG[A], val));
@@ -1859,7 +1487,7 @@ namespace GBCore
                 // JR NZ, d8
                 case 0x20:
                     {
-                        sbyte offset = (sbyte)ReadMem(++PC);
+                        sbyte offset = (sbyte)_ram.ReadMem(++PC);
                         if (!IsSet(Flags.Z))
                         {
                             PC++;
@@ -1877,7 +1505,7 @@ namespace GBCore
                 // JR NC, d8
                 case 0x30:
                     {
-                        sbyte offset = (sbyte)ReadMem(++PC);
+                        sbyte offset = (sbyte)_ram.ReadMem(++PC);
                         if (!IsSet(Flags.C))
                         {
                             PC++;
@@ -1895,7 +1523,7 @@ namespace GBCore
                 // JR Z, d8
                 case 0x28:
                     {
-                        sbyte offset = (sbyte)ReadMem(++PC);
+                        sbyte offset = (sbyte)_ram.ReadMem(++PC);
                         if (IsSet(Flags.Z))
                         {
                             PC++;
@@ -1913,7 +1541,7 @@ namespace GBCore
                 // JR C, d8
                 case 0x38:
                     {
-                        sbyte offset = (sbyte)ReadMem(++PC);
+                        sbyte offset = (sbyte)_ram.ReadMem(++PC);
                         if (IsSet(Flags.C))
                         {
                             PC++;
@@ -1931,7 +1559,7 @@ namespace GBCore
                 // JR d8
                 case 0x18:
                     {
-                        sbyte offset = (sbyte)ReadMem(++PC);
+                        sbyte offset = (sbyte)_ram.ReadMem(++PC);
                         PC++;
                         PC += (ushort)offset;
                         _cycleCount += 12;
@@ -2001,7 +1629,7 @@ namespace GBCore
                 // JP a16
                 case 0xc3:
                     {
-                        ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
+                        ushort addr = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
                         PC = addr;
                         _cycleCount += 16;
                     }
@@ -2018,14 +1646,14 @@ namespace GBCore
                 // JP NZ a16
                 case 0xC2:
                     {
-                        ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
+                        ushort addr = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
                         if (!IsSet(Flags.Z))
                         {
                             PC = addr;
                             _cycleCount += 16;
                         }
-                        else 
-                        { 
+                        else
+                        {
                             PC++;
                         }
                     }
@@ -2034,7 +1662,7 @@ namespace GBCore
                 // JP NZ a16
                 case 0xD2:
                     {
-                        ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
+                        ushort addr = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
                         if (!IsSet(Flags.C))
                         {
                             PC = addr;
@@ -2050,7 +1678,7 @@ namespace GBCore
                 // JP Z a16
                 case 0xCA:
                     {
-                        ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
+                        ushort addr = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
                         if (IsSet(Flags.Z))
                         {
                             PC = addr;
@@ -2066,7 +1694,7 @@ namespace GBCore
                 // JP C a16
                 case 0xDA:
                     {
-                        ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
+                        ushort addr = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
                         if (IsSet(Flags.C))
                         {
                             PC = addr;
@@ -2082,10 +1710,8 @@ namespace GBCore
                 // CALL a16
                 case 0xCD:
                     {
-                        ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
+                        ushort addr = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
                         PC++;
-                        //WriteMem(--SP, (byte)(PC & 0x00FF));
-                        //WriteMem(--SP, (byte)(PC >> 8));
                         Push16(PC);
                         PC = addr;
                         _cycleCount += 24;
@@ -2095,12 +1721,10 @@ namespace GBCore
                 // CALL Z 16
                 case 0xCC:
                     {
-                        ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
+                        ushort addr = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
                         if (IsSet(Flags.Z))
                         {
                             PC++;
-                            //WriteMem(--SP, (byte)(PC >> 8));
-                            //WriteMem(--SP, (byte)(PC & 0x00FF));
                             Push16(PC);
                             PC = addr;
                             _cycleCount += 24;
@@ -2116,12 +1740,10 @@ namespace GBCore
                 // CALL C 16
                 case 0xDC:
                     {
-                        ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
+                        ushort addr = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
                         if (IsSet(Flags.C))
                         {
                             PC++;
-                            //WriteMem(--SP, (byte)(PC >> 8));
-                            //WriteMem(--SP, (byte)(PC & 0x00FF));
                             Push16(PC);
                             PC = addr;
                             _cycleCount += 24;
@@ -2137,12 +1759,10 @@ namespace GBCore
                 // CALL NZ 16
                 case 0xC4:
                     {
-                        ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
+                        ushort addr = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
                         if (!IsSet(Flags.Z))
                         {
                             PC++;
-                            //WriteMem(--SP, (byte)(PC >> 8));
-                            //WriteMem(--SP, (byte)(PC & 0x00FF));
                             Push16(PC);
                             PC = addr;
                             _cycleCount += 24;
@@ -2158,12 +1778,10 @@ namespace GBCore
                 // CALL NC 16
                 case 0xD4:
                     {
-                        ushort addr = (ushort)(ReadMem(++PC) + (ReadMem(++PC) << 8));
+                        ushort addr = (ushort)(_ram.ReadMem(++PC) + (_ram.ReadMem(++PC) << 8));
                         if (!IsSet(Flags.C))
                         {
                             PC++;
-                            //WriteMem(--SP, (byte)(PC >> 8));
-                            //WriteMem(--SP, (byte)(PC & 0x00FF));
                             Push16(PC);
                             PC = addr;
                             _cycleCount += 24;
@@ -2177,7 +1795,10 @@ namespace GBCore
                     break;
 
                 // RST
-                case 0xC7: case 0xD7: case 0xE7: case 0xF7:
+                case 0xC7:
+                case 0xD7:
+                case 0xE7:
+                case 0xF7:
                     {
                         byte addr = (byte)((opcode & 0xF0) - 0xC0);
                         Push16(++PC);
@@ -2187,7 +1808,10 @@ namespace GBCore
                     break;
 
                 // RST
-                case 0xCF: case 0xDF: case 0xEF: case 0xFF:
+                case 0xCF:
+                case 0xDF:
+                case 0xEF:
+                case 0xFF:
                     {
                         byte addr = (byte)((opcode & 0xF0) - 0xC0 + 8);
                         Push16(++PC);
@@ -2199,7 +1823,6 @@ namespace GBCore
                 // RETI
                 case 0xD9:
                     {
-                        //ushort addr = (ushort)(ReadMem(SP++) + (ReadMem(SP++) << 8));
                         ushort addr = Pop16();
                         PC = addr;
                         _cycleCount += 4;
@@ -2210,7 +1833,6 @@ namespace GBCore
                 // RET
                 case 0xC9:
                     {
-                        //ushort addr = (ushort)(((ushort)ReadMem(SP++) << 8) + (ReadMem(SP++)));
                         ushort addr = Pop16();
                         PC = addr;
                         _cycleCount += 4;
@@ -2224,9 +1846,419 @@ namespace GBCore
             }
         }
 
+        private void DecodeExectueCB(byte opcode)
+        {
+            switch (opcode)
+            {
+
+                case 0x00: case 0x01: case 0x02: case 0x03: case 0x04: case 0x05: case 0x07:
+                    RLC_r(opcode); // RLC r
+                    break;
+                case 0x08: case 0x09: case 0x0A: case 0x0B: case 0x0C: case 0x0D: case 0x0F:
+                    RRC_r(opcode); // RRC r
+                    break;
+                case 0x10: case 0x11: case 0x12: case 0x13: case 0x14: case 0x15: case 0x17:
+                    RL_r(opcode); // RL r
+                    break;
+                case 0x18: case 0x19: case 0x1A: case 0x1B: case 0x1C: case 0x1D: case 0x1F:
+                    RR_r(opcode); // RR r
+                    break;
+                case 0x06:
+                    RLC_HL(); // RLC (HL)
+                    break;
+                // RRC (HL)
+                case 0x0E:
+                    RRC_HL();
+                    break;
+                // RL (HL)
+                case 0x16:
+                    RL_HL();
+                    break;
+                // RR (HL)
+                case 0x1E:
+                    RR_HL();
+                    break;
+                case 0x20: case 0x21: case 0x22: case 0x23: case 0x24: case 0x25: case 0x27:
+                    SLA_r(opcode);
+                    break;
+                case 0x28: case 0x29: case 0x2A: case 0x2B: case 0x2C: case 0x2D: case 0x2F:
+                    SRA_r(opcode);
+                    break;
+                case 0x26:
+                    SLA_HL(); // SLA (HL)
+                    break;
+                case 0x2E:
+                    SRA_HL();  // SRA_HL
+                    break;
+                case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x35: case 0x37:
+                    SWAP_r(opcode); break;
+                case 0x36: // SWAP (HL)
+                    SWAP_HL(opcode); break;
+                case 0x38: case 0x39: case 0x3A: case 0x3B: case 0x3C: case 0x3D: case 0x3F:
+                    SRL_r(opcode); break;
+                case 0x3E:
+                    SRL_HL(); break; // SRL (HL)
+                case 0x40: case 0x41: case 0x42: case 0x43: case 0x44: case 0x45: case 0x47:
+                case 0x48: case 0x49: case 0x4A: case 0x4B: case 0x4C: case 0x4D: case 0x4F:
+                case 0x50: case 0x51: case 0x52: case 0x53: case 0x54: case 0x55: case 0x57:
+                case 0x58: case 0x59: case 0x5A: case 0x5B: case 0x5C: case 0x5D: case 0x5F:
+                case 0x60: case 0x61: case 0x62: case 0x63: case 0x64: case 0x65: case 0x67:
+                case 0x68: case 0x69: case 0x6A: case 0x6B: case 0x6C: case 0x6D: case 0x6F:
+                case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75: case 0x77:
+                case 0x78: case 0x79: case 0x7A: case 0x7B: case 0x7C: case 0x7D: case 0x7F:
+                    BIT_x_r8(opcode); // BIT X r8
+                    break;
+                case 0x46: case 0x4E: case 0x56: case 0x5E: case 0x66: case 0x6E: case 0x76: case 0x7E:
+                    BIT_X_HL(opcode); // BIT X (HL)
+                    break;
+                case 0x80: case 0x81: case 0x82: case 0x83: case 0x84: case 0x85: case 0x87:
+                case 0x88: case 0x89: case 0x8A: case 0x8B: case 0x8C: case 0x8D: case 0x8F:
+                case 0x90: case 0x91: case 0x92: case 0x93: case 0x94: case 0x95: case 0x97:
+                case 0x98: case 0x99: case 0x9A: case 0x9B: case 0x9C: case 0x9D: case 0x9F:
+                case 0xA0: case 0xA1: case 0xA2: case 0xA3: case 0xA4: case 0xA5: case 0xA7:
+                case 0xA8: case 0xA9: case 0xAA: case 0xAB: case 0xAC: case 0xAD: case 0xAF:
+                case 0xB0: case 0xB1: case 0xB2: case 0xB3: case 0xB4: case 0xB5: case 0xB7:
+                case 0xB8: case 0xB9: case 0xBA: case 0xBB: case 0xBC: case 0xBD: case 0xBF:
+                    RES_X_r8(opcode); // RES X r8
+                    break;
+                case 0x86: case 0x8E: case 0x96: case 0x9E: case 0xA6: case 0xAE: case 0xB6: case 0xBE:
+                    RES_X_HL(opcode); // RES X (HL)
+                    break;
+                case 0xC0: case 0xC1: case 0xC2: case 0xC3: case 0xC4: case 0xC5: case 0xC7:
+                case 0xC8: case 0xC9: case 0xCA: case 0xCB: case 0xCC: case 0xCD: case 0xCF:
+                case 0xD0: case 0xD1: case 0xD2: case 0xD3: case 0xD4: case 0xD5: case 0xD7:
+                case 0xD8: case 0xD9: case 0xDA: case 0xDB: case 0xDC: case 0xDD: case 0xDF:
+                case 0xE0: case 0xE1: case 0xE2: case 0xE3: case 0xE4: case 0xE5: case 0xE7:
+                case 0xE8: case 0xE9: case 0xEA: case 0xEB: case 0xEC: case 0xED: case 0xEF:
+                case 0xF0: case 0xF1: case 0xF2: case 0xF3: case 0xF4: case 0xF5: case 0xF7:
+                case 0xF8: case 0xF9: case 0xFA: case 0xFB: case 0xFC: case 0xFD: case 0xFF:
+                    SET_X_r8(opcode); // SET X r8
+                    break;
+                case 0xC6: case 0xCE: case 0xD6: case 0xDE: case 0xE6: case 0xEE: case 0xF6: case 0xFE:
+                    SET_X_HL(opcode); // SET X (HL)
+                    break;
+                default:
+                    throw new NotImplementedException(opcode.ToString("X2"));
+            }
+        }
+
+        private void SetFlag(Flags flag, bool input)
+        {
+            if (input)
+            {
+                REG[F] |= (byte)flag;
+            }
+            else
+            {
+                REG[F] &= (byte)~flag;
+            }
+        }
+
+        public bool IsSet(Flags flag)
+        {
+            return ((Flags)REG[F]).HasFlag(flag);
+        }
+
+        private static bool IsPlusCarry(byte a, byte operand)
+        {
+            return (a + operand) > byte.MaxValue;
+        }
+
+        private static bool IsPlusHalfCarry(byte a, byte operand)
+        {
+            return ((a & 0x0F) + (operand & 0x0F) & 0x10) > 0;
+        }
+
+        private static bool IsPlusHalfCarry(byte a, byte operand, byte carry)
+        {
+            return (((a & 0x0F) + (operand & 0x0F) + (carry & 0xf)) & 0x10) > 0;
+        }
+
+        private static bool IsMinusHalfCarry(byte a, byte operand)
+        {
+            return ((a & 0x0F) - (operand & 0x0F) & 0x10) > 0;
+        }
+
+        private static bool IsMinusHalfCarry(byte a, byte operand, byte carry)
+        {
+            return (((a & 0x0F) - (operand & 0x0F) - (carry & 0x0F)) & 0x10) > 0;
+        }
+
+        private static bool IsPlusHalfCarryLowByte(ushort a, ushort operand)
+        {
+            byte lowA = (byte)(a & 0xFF);
+            byte lowOp = (byte)(operand & 0xFF);
+            return IsPlusHalfCarry(lowA, lowOp);
+        }
+
+        private static bool IsPlusHalfCarryHighByte(ushort a, ushort operand)
+        {
+            byte lowA = (byte)(a & 0xFF);
+            byte lowOp = (byte)(operand & 0xFF);
+            byte lowCarry = IsPlusCarry(lowA, lowOp) ? (byte)1 : (byte)0;
+            byte highA = (byte)((a & 0xFF00) >> 8);
+            byte highOp = (byte)((operand & 0xFF00) >> 8);
+            return IsPlusHalfCarry(highA, highOp, lowCarry);
+        }
+
+        private static bool IsMinusHalfCarryLowByte(ushort a, ushort operand)
+        {
+            byte lowA = (byte)(a & 0xFF);
+            byte lowOp = (byte)(operand & 0xFF);
+            return IsMinusHalfCarry(lowA, lowOp);
+        }
+
+        private void SWAP_HL(byte opcode)
+        {
+            HL = APU.SWP(HL);            
+        }
+
+        private void RLC_r(byte opcode)
+        {
+            int reg = opcode & 0b00001111;
+
+            REG[reg] = APU.ROT(REG[reg], ref REG[F], true, APU.Direction.Left);
+
+            PC++;
+            _cycleCount += 8;
+        }
+
+        private void RRC_r(byte opcode)
+        {
+            int reg = (opcode & 0b00001111) - 8;
+
+            REG[reg] = APU.ROT(REG[reg], ref REG[F], true, APU.Direction.Right);
+
+            PC++;
+            _cycleCount += 8;
+        }
+
+        private void RL_r(byte opcode)
+        {
+            int reg = opcode & 0b00001111;
+
+            REG[reg] = APU.ROT(REG[reg], ref REG[F], false, APU.Direction.Left);
+
+            PC++;
+            _cycleCount += 8;
+        }
+
+        private void RR_r(byte opcode)
+        {
+            int reg = (opcode & 0b00001111) - 8;
+
+            REG[reg] = APU.ROT(REG[reg], ref REG[F], false, APU.Direction.Right);
+
+            PC++;
+            _cycleCount += 8;
+        }
+
+        private void RLC_HL()
+        {
+            _ram.WriteMem(HL, APU.ROT(_ram.ReadMem(HL), ref REG[F], true, APU.Direction.Left));
+
+            PC++;
+            _cycleCount += 16;
+        }
+
+        private void RRC_HL()
+        {
+            _ram.WriteMem(HL, APU.ROT(_ram.ReadMem(HL), ref REG[F], true, APU.Direction.Right));
+
+            PC++;
+            _cycleCount += 16;
+        }
+
+        private void RL_HL()
+        {
+            _ram.WriteMem(HL, APU.ROT(_ram.ReadMem(HL), ref REG[F], false, APU.Direction.Left));
+
+            PC++;
+            _cycleCount += 16;
+        }
+
+        private void RR_HL()
+        {
+            byte result = APU.ROT(_ram.ReadMem(HL), ref REG[F], false, APU.Direction.Right);
+            _ram.WriteMem(HL, result);
+
+            PC++;
+            _cycleCount += 16;
+        }
+
+        private void SET_X_HL(byte opcode)
+        {
+            byte x = (byte)((opcode & 0b00111000) >> 3);
+
+            _ram.WriteMem(HL, (byte)(_ram.ReadMem(HL) | (0b00000001 << x)));
+
+            PC++;
+            _cycleCount += 8;
+        }
+
+        private void SET_X_r8(byte opcode)
+        {
+            int reg = opcode & 0b00000111;
+            byte x = (byte)((opcode & 0b00111000) >> 3);
+
+            REG[reg] |= (byte)(0b00000001 << x);
+
+            PC++;
+            _cycleCount += 8;
+        }
+
+        private void RES_X_HL(byte opcode)
+        {
+            byte x = (byte)((opcode & 0b00111000) >> 3);
+
+            _ram.WriteMem(HL, (byte)(_ram.ReadMem(HL) & (0b11111110 << x)));
+
+            PC++;
+            _cycleCount += 8;
+        }
+
+        private void RES_X_r8(byte opcode) // Reset bit X to 0
+        {
+            int reg = opcode & 0b00000111;
+            byte x = (byte)((opcode & 0b00111000) >> 3);
+
+            REG[reg] = (byte)(REG[reg] & ~(byte)(0b00000001 << x));
+
+            PC++;
+            _cycleCount += 8;
+        }
+
+        private void BIT_X_HL(byte opcode)
+        {
+            byte x = (byte)((opcode & 0b00111000) >> 3);
+
+            SetFlag(Flags.Z, (_ram.ReadMem(HL) & (0b00000001 << x)) == 0);
+            SetFlag(Flags.N, false);
+            SetFlag(Flags.H, true);
+
+            PC++;
+            _cycleCount += 8;
+        }
+
+        private void BIT_x_r8(byte opcode)
+        {
+            int reg = opcode & 0b00000111;
+            byte x = (byte)((opcode & 0b00111000) >> 3);
+
+            SetFlag(Flags.Z, (REG[reg] & (0b00000001 << x)) == 0);
+            SetFlag(Flags.N, false);
+            SetFlag(Flags.H, true);
+
+            PC++;
+            _cycleCount += 8;
+        }
+
+        private void SRL_HL()
+        {
+            byte result = (byte)(_ram.ReadMem(HL) >> 1);
+            SetFlag(Flags.C, (_ram.ReadMem(HL) & 0x01) > 0);
+            _ram.WriteMem(HL, result);
+
+            SetFlag(Flags.Z, result == 0);
+            SetFlag(Flags.N, false);
+            SetFlag(Flags.H, false);
+
+            PC++;
+            _cycleCount += 16;
+        }
+
+        private void SRL_r(byte opcode)
+        {
+            int reg = (opcode & 0b00001111) - 8;
+
+            SetFlag(Flags.C, (REG[reg] & 0b00000001) > 0);
+
+            REG[reg] = (byte)(REG[reg] >> 1 & 0x7F);
+
+            SetFlag(Flags.Z, REG[reg] == 0);
+            SetFlag(Flags.N, false);
+            SetFlag(Flags.H, false);
+
+            PC++;
+            _cycleCount += 8;
+        }
+
+        private void SWAP_r(byte opcode)
+        {
+            int reg = opcode & 0b00000111;
+
+            REG[reg] = APU.SWP(REG[reg]);
+
+            SetFlag(Flags.Z, REG[reg] == 0);
+            SetFlag(Flags.N, false);
+            SetFlag(Flags.H, false);
+            SetFlag(Flags.C, false);
+
+            PC++;
+            _cycleCount += 8;
+        }
+
+        private void SRA_HL()
+        {
+            byte result = (byte)(_ram.ReadMem(HL) >> 1);
+            SetFlag(Flags.C, ((_ram.ReadMem(HL) & 0x01) > 0));
+            _ram.WriteMem(HL, result);
+
+            SetFlag(Flags.Z, result == 0);
+            SetFlag(Flags.N, false);
+            SetFlag(Flags.H, false);
+
+            PC++;
+            _cycleCount += 16;
+        }
+
+        private void SLA_HL()
+        {
+            byte result = (byte)(_ram.ReadMem(HL) << 1);
+            SetFlag(Flags.C, (_ram.ReadMem(HL) & 0b10000000) > 0);
+            _ram.WriteMem(HL, result);
+
+            SetFlag(Flags.Z, result == 0);
+            SetFlag(Flags.N, false);
+            SetFlag(Flags.H, false);
+
+            PC++;
+            _cycleCount += 16;
+        }
+
+        private void SRA_r(byte opcode)
+        {
+            int reg = opcode & 0b00000111;
+
+            SetFlag(Flags.C, (REG[reg] & 0b00000001) > 0);
+            REG[reg] = (byte)((REG[reg] & (1 << 7)) | (REG[reg] >> 1));
+
+            SetFlag(Flags.Z, REG[reg] == 0);
+            SetFlag(Flags.N, false);
+            SetFlag(Flags.H, false);
+
+            PC++;
+            _cycleCount += 8;
+        }
+
+        private void SLA_r(byte opcode)
+        {
+            int reg = opcode & 0b00000111;
+
+            SetFlag(Flags.C, (REG[reg] & 0b10000000) > 0);
+            REG[reg] = (byte)(REG[reg] << 1);
+
+            SetFlag(Flags.Z, REG[reg] == 0);
+            SetFlag(Flags.N, false);
+            SetFlag(Flags.H, false);
+
+            PC++;
+            _cycleCount += 8;
+        }        
+
         private void LD_HL_n()
         {
-            WriteMem(HL, ReadMem(++PC));
+            _ram.WriteMem(HL, _ram.ReadMem(++PC));
             PC++;
             _cycleCount += 12;
         }
@@ -2234,7 +2266,7 @@ namespace GBCore
         private void LD_HL_Rx(byte opcode)
         {
             byte x = (byte)(opcode & 0b00000111);
-            WriteMem(HL, REG[x]);
+            _ram.WriteMem(HL, REG[x]);
             PC++;
             _cycleCount += 8;
         }
@@ -2242,7 +2274,7 @@ namespace GBCore
         private void LR_Rx_HL(byte opcode)
         {
             byte x = (byte)((opcode & 0b00111000) >> 3);
-            REG[x] = ReadMem(HL);
+            REG[x] = _ram.ReadMem(HL);
             PC++;
             _cycleCount += 8;
         }
@@ -2250,7 +2282,7 @@ namespace GBCore
         private void LR_Rx_n(byte opcode)
         {
             byte x = (byte)((opcode & 0b00111000) >> 3);
-            REG[x] = ReadMem(++PC);
+            REG[x] = _ram.ReadMem(++PC);
             PC++;
             _cycleCount += 8;
         }
@@ -2266,7 +2298,7 @@ namespace GBCore
 
         private void Ret()
         {
-            PC = (ushort)((ReadMem((ushort)(SP + 1)) << 8) + ReadMem(SP));
+            PC = (ushort)((_ram.ReadMem((ushort)(SP + 1)) << 8) + _ram.ReadMem(SP));
             SP += 2;
             _cycleCount += 16;
         }
@@ -2275,7 +2307,6 @@ namespace GBCore
         {
             SetFlag(Flags.N, false);
             SetFlag(Flags.H, IsPlusHalfCarryHighByte(HL, regVal));
-            //SetFlag(Flags.H, IsPlusHalfCarryLowByte(HL, regVal));
             SetFlag(Flags.C, HL + regVal > ushort.MaxValue);
             HL += regVal;
 
@@ -2292,7 +2323,7 @@ namespace GBCore
 
         public void Push8(byte value)
         {
-            WriteMem(--SP, value);
+            _ram.WriteMem(--SP, value);
         }
 
         public ushort Pop16()
@@ -2304,7 +2335,7 @@ namespace GBCore
 
         public byte Pop8()
         {
-            return ReadMem(SP++);
+            return _ram.ReadMem(SP++);
         }
     }
 }

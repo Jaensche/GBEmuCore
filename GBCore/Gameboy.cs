@@ -2,14 +2,13 @@
 {
     internal class Gameboy
     {
+        private readonly Memory _ram;        
         private readonly CPU _cpu;
         private readonly PPU _ppu;
 
-        public byte[] _ram = new byte[0x10000];
-        public byte[] _vram = new byte[0x10000];
-
         public Gameboy(bool traceEnabled)
         {
+            _ram = new Memory(0x10000);
             _cpu = new CPU(traceEnabled, _ram);
             _ppu = new PPU();
         }
