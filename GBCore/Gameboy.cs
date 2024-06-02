@@ -10,7 +10,7 @@
         {
             _ram = new Memory(0x10000);
             _cpu = new CPU(traceEnabled, _ram);
-            _ppu = new PPU();
+            _ppu = new PPU(_ram);
         }
 
         public void Run(byte[] code, long maxInstr = 0)
