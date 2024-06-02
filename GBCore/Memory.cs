@@ -9,14 +9,14 @@
             _ram = new byte[size];
         }
 
-        public byte ReadMem(ushort addr)
+        public byte Read(ushort addr)
         {
             byte data = _ram[addr];
 
             return data;
         }
 
-        public void WriteMem(ushort addr, byte data)
+        public void Write(ushort addr, byte data)
         {
             //DIV - Divider Register - Always set to 0x00
             if (addr == 0xFF04)

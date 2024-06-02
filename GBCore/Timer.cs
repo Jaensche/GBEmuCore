@@ -23,41 +23,41 @@
             {
                 timerDivider++;
 
-                byte tac = _ram.ReadMem(TAC);
+                byte tac = _ram.Read(TAC);
                 byte inputClockSelect = (byte)(tac & 0b00000011);
                 bool timerEnable = (tac & 0b00000100) > 0;
 
                 if (timerEnable)
                 {
-                    byte tima = _ram.ReadMem(TIMA);
+                    byte tima = _ram.Read(TIMA);
 
                     if (tima == 0xFF)
                     {
                         // Reset TIMA and raise timer interrupt
-                        byte irqFlags = _ram.ReadMem(IRQ_FLAGS);
-                        _ram.WriteMem(IRQ_FLAGS, (byte)((byte)irqFlags | (byte)IrqFlags.Timer));
-                        _ram.WriteMem(TIMA, _ram.ReadMem(TMA));
+                        byte irqFlags = _ram.Read(IRQ_FLAGS);
+                        _ram.Write(IRQ_FLAGS, (byte)((byte)irqFlags | (byte)IrqFlags.Timer));
+                        _ram.Write(TIMA, _ram.Read(TMA));
                     }
                     else if (timerDivider % 64 == 0 && inputClockSelect == 0b00) // 1024
                     {
-                        _ram.WriteMem(TIMA, (byte)(tima + 1));
+                        _ram.Write(TIMA, (byte)(tima + 1));
                     }
                     else if (timerDivider % 32 == 0 && inputClockSelect == 0b11) // 256
                     {
-                        _ram.WriteMem(TIMA, (byte)(tima + 1));
+                        _ram.Write(TIMA, (byte)(tima + 1));
                     }
                     else if (timerDivider % 16 == 0 && inputClockSelect == 0b10) // 64
                     {
-                        _ram.WriteMem(TIMA, (byte)(tima + 1));
+                        _ram.Write(TIMA, (byte)(tima + 1));
                     }
                     else if (inputClockSelect == 0b01) // 16
                     {
-                        _ram.WriteMem(TIMA, (byte)(tima + 1));
+                        _ram.Write(TIMA, (byte)(tima + 1));
                     }
                 }
 
                 // 16
-                _ram.WriteMem(DIV, (byte)(_ram.ReadMem(DIV) + 1));
+                _ram.Write(DIV, (byte)(_ram.Read(DIV) + 1));
 
                 if (timerDivider >= 64)
                 {
