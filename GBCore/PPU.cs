@@ -5,7 +5,7 @@ namespace GBCore
 {
     public class Sprite
     {
-        public byte  Y { get; set; }
+        public byte Y { get; set; }
         public byte X { get; set; }
         public byte TileNumber { get; set; }
         public byte Flags { get; set; }
@@ -46,6 +46,8 @@ namespace GBCore
 
         private PPU_STATE ppuState = PPU_STATE.OAM_Scan;
         private FETCH_STATE fetchState = FETCH_STATE.ReadID;
+
+        private long _ticks = 0;
 
         public PPU(Memory ram) 
         {
@@ -120,30 +122,33 @@ namespace GBCore
         }
 
         public void Cycle()
-        {            
-            switch(ppuState)
+        {
+            switch (ppuState)
             {
                 case PPU_STATE.OAM_Scan: // MODE 2
-                    {   
+                    {
                         // OAM Scan (Mode 2)
-                        for (ushort sprite = 0; sprite < 40; sprite++)
+                        //for (ushort sprite = 0; sprite < 40; sprite++)
+                        //{
+                        //    Sprite currentSprite = new Sprite(
+                        //        _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH))), 
+                        //        _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH) + 1)), 
+                        //        _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH) + 2)), 
+                        //        _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH) + 3)));
+
+                        //    if (currentSprite.X >= 0
+                        //        && (LY + 16) >= currentSprite.Y
+                        //        && (LY + 16) < (currentSprite.Y + 8) // TODO: Handle tall sprites
+                        //        && spriteBuffer.Count < 10)
+                        //    {
+                        //        spriteBuffer.Add(currentSprite);
+                        //    }
+                        //}
+
+                        if(_ticks == 80)
                         {
-                            Sprite currentSprite = new Sprite(
-                                _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH))), 
-                                _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH) + 1)), 
-                                _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH) + 2)), 
-                                _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH) + 3)));
-
-                            if (currentSprite.X >= 0
-                                && (LY + 16) >= currentSprite.Y
-                                && (LY + 16) < (currentSprite.Y + 8) // TODO: Handle tall sprites
-                                && spriteBuffer.Count < 10)
-                            {
-                                spriteBuffer.Add(currentSprite);
-                            }
+                            ppuState = PPU_STATE.Drawing; 
                         }
-
-                        ppuState = PPU_STATE.Drawing;
                     }
                     break;
                 case PPU_STATE.Drawing: // MODE 3
@@ -154,32 +159,47 @@ namespace GBCore
                         // Fetch Tile Data (High)
                         // Push to FIFO
 
-                        ppuState = PPU_STATE.H_Blank;
+                        if (_ticks == 160)
+                        {
+                            ppuState = PPU_STATE.H_Blank;
+                        }
                     }
                     break;
                 case PPU_STATE.H_Blank: // MODE 0
                     {
-                        LY++;
-                        if(LY >= 144)
+                        if(_ticks == 456)
                         {
-                            ppuState = PPU_STATE.V_Blank;
-                        }       
-                        else
-                        {
-                            ppuState = PPU_STATE.OAM_Scan;
+                            _ticks = 0;
+
+                            LY++;
+                            if (LY >= 144)
+                            {
+                                ppuState = PPU_STATE.V_Blank;
+                            }
+                            else
+                            {
+                                ppuState = PPU_STATE.OAM_Scan;
+                            } 
                         }
                     }
                     break;
                 case PPU_STATE.V_Blank: // MODE 1
                     {
-                        LY++;
-                        if (LY >= 153) // idle for 10 lines
+                        if (_ticks == 456)
                         {
-                            ppuState = PPU_STATE.OAM_Scan;
+                            _ticks = 0;
+                            LY++;
+                            if (LY >= 153) // idle for 10 lines
+                            {
+                                ppuState = PPU_STATE.OAM_Scan;
+                                LY = 0;
+                            }
                         }
                     }
                     break;
             }
+
+            _ticks++;
         }
     }
 }

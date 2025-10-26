@@ -21,7 +21,7 @@ namespace GBCore
 
         public void TimerTick(long ticks)
         {
-            //for (long i = 0; i < ticks; i++)
+            for (long i = 0; i < ticks; i++)
             {
                 timerDivider++;
 

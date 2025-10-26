@@ -260,7 +260,7 @@ namespace GBCore
             CheckInterrupt(IrqFlags.Joypad);
         }
 
-        public void Cycle()
+        public long ExecuteNext()
         {
             // reset redraw
             RedrawFlag = false;
@@ -279,10 +279,14 @@ namespace GBCore
             // Execute Opcode
             DecodeExecute(opcode);
 
-            _timer.TimerTick(_cycleCount - oldCycleCount);
+            long elapsedCycles = _cycleCount - oldCycleCount;
+
+            _timer.TimerTick(elapsedCycles);
 
             // handle interrupts
             IRQ();
+
+            return elapsedCycles;
         }
 
         private void Trace()

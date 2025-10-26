@@ -19,10 +19,14 @@
             _cpu.Load(code);
 
             long count = 0;
+            long cpuCycles = 0;
             while (count < maxInstr || maxInstr == 0)
             {
-                _cpu.Cycle();
-                _ppu.Cycle();
+                cpuCycles = _cpu.ExecuteNext();
+                for (int i = 0; i < cpuCycles; i++)
+                {
+                    _ppu.Cycle();
+                }
                 count++;
 
                 if (count == 152007)
