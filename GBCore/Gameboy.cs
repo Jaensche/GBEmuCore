@@ -11,6 +11,7 @@
             _ram = new Memory(0x10000);
             _cpu = new CPU(traceEnabled, _ram);
             _ppu = new PPU(_ram);
+            _ppu = new PPU(_ram);
         }
 
         public void Run(byte[] code, long maxInstr = 0)
@@ -21,6 +22,7 @@
             while (count < maxInstr || maxInstr == 0)
             {
                 _cpu.Cycle();
+                _ppu.Cycle();
                 count++;
 
                 if (count == 152007)

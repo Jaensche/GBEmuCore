@@ -1,8 +1,10 @@
-﻿namespace GBCore
+﻿using System;
+
+namespace GBCore
 {
     internal class Timer
     {
-        private Memory _ram;
+        private readonly Memory _ram;
 
         private const ushort DIV = 0xFF04;
         private const ushort TIMA = 0xFF05;

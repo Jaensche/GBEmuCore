@@ -64,8 +64,8 @@ namespace GBCore
         public const int A = 7;
         public readonly byte[] REG = new byte[8];
 
-        private Memory _ram;
-        private Timer _timer;
+        private readonly Memory _ram;
+        private readonly Timer _timer;
 
         public const ushort IRQ_FLAGS = 0xFF0F;
         public const ushort IRQ_ENABLE = 0xFF0F;               
@@ -1893,7 +1893,7 @@ namespace GBCore
                 case 0x30: case 0x31: case 0x32: case 0x33: case 0x34: case 0x35: case 0x37:
                     SWAP_r(opcode); break;
                 case 0x36: // SWAP (HL)
-                    SWAP_HL(opcode); break;
+                    SWAP_HL(); break;
                 case 0x38: case 0x39: case 0x3A: case 0x3B: case 0x3C: case 0x3D: case 0x3F:
                     SRL_r(opcode); break;
                 case 0x3E:
@@ -2008,7 +2008,7 @@ namespace GBCore
             return IsMinusHalfCarry(lowA, lowOp);
         }
 
-        private void SWAP_HL(byte opcode)
+        private void SWAP_HL()
         {
             HL = APU.SWP(HL);            
         }

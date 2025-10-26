@@ -1,10 +1,11 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace GBCore
 {
     public class Sprite
     {
-        public byte Y { get; set; }
+        public byte  Y { get; set; }
         public byte X { get; set; }
         public byte TileNumber { get; set; }
         public byte Flags { get; set; }
@@ -18,11 +19,33 @@ namespace GBCore
         }
     }
 
+    public enum PPU_STATE
+    {
+        OAM_Scan = 2,
+        Drawing = 3,
+        H_Blank = 0,
+        V_Blank = 1
+    }
+
+    public enum FETCH_STATE
+    {
+        ReadID,
+        ReadData0,
+        ReadData1,
+        Push
+    }
+
     public class PPU
     {
         private const int SCANLINES = 144;
         private const int OAM_START = 0xFE00;
         private const int OAM_END = 0xFE9F;
+        private const int OAM_ENTRY_LENGTH = 4;
+        private const int BG_MAP_A_START = 0x9800;
+        private const int BG_MAP_A_END = 0x9BFF;
+
+        private PPU_STATE ppuState = PPU_STATE.OAM_Scan;
+        private FETCH_STATE fetchState = FETCH_STATE.ReadID;
 
         public PPU(Memory ram) 
         {
@@ -55,7 +78,7 @@ namespace GBCore
          * $FF41 STAT (LCD Status Register)
         */
 
-        private Memory _ram;
+        private readonly Memory _ram;
         //byte[] TileData = new byte[16 * 24 * 16];
         //byte[,] OAM = new byte[40 * 8 * 8, 2]; // 40 Tiles * 8x8 Pixels * 2 bytes (nibbles), Sprite Data
 
@@ -65,37 +88,98 @@ namespace GBCore
 
         private byte[,] Screen = new byte[160, 144];
 
-        public void Run()
+        private byte LY = 0;
+
+        private readonly List<Sprite> spriteBuffer = new List<Sprite>();
+
+        private void Fetch()
         {
-            for(int LY = 0; LY < SCANLINES; LY++) 
+            switch (fetchState)
             {
-                List<Sprite> oamBuffer = new List<Sprite>();
-
-                // OAM Scan (Mode 2)
-                for(ushort sprite = 0; sprite < 40; sprite++)
-                {
-                    Sprite currentSprite = new Sprite(_ram.Read((ushort)(sprite * 4)), _ram.Read((ushort)((sprite * 4) + 1)), _ram.Read((ushort)((sprite * 4) + 2)), _ram.Read((ushort)((sprite * 4) + 3)));
-
-                    if(currentSprite.X >= 0 
-                        && (LY + 16) >= currentSprite.Y
-                        && (LY + 16) < (currentSprite.Y + 8) // TODO: Handle tall sprites
-                        && oamBuffer.Count < 10)
+                case FETCH_STATE.ReadID:
                     {
-                        oamBuffer.Add(currentSprite);
+                        fetchState = FETCH_STATE.ReadData0;
                     }
-                }
+                    break;
+                case FETCH_STATE.ReadData0:
+                    {
+                        fetchState = FETCH_STATE.ReadData1;
+                    }
+                    break;
+                case FETCH_STATE.ReadData1:
+                    {
+                        fetchState = FETCH_STATE.Push;
+                    }
+                    break;
+                case FETCH_STATE.Push:
+                    {
+                        fetchState = FETCH_STATE.ReadID;
+                    }
+                    break;
+            }
+        }
 
-                // Drawing (Mode 3)
-                    // Background Pixel Fetching
+        public void Cycle()
+        {            
+            switch(ppuState)
+            {
+                case PPU_STATE.OAM_Scan: // MODE 2
+                    {   
+                        // OAM Scan (Mode 2)
+                        for (ushort sprite = 0; sprite < 40; sprite++)
+                        {
+                            Sprite currentSprite = new Sprite(
+                                _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH))), 
+                                _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH) + 1)), 
+                                _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH) + 2)), 
+                                _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH) + 3)));
+
+                            if (currentSprite.X >= 0
+                                && (LY + 16) >= currentSprite.Y
+                                && (LY + 16) < (currentSprite.Y + 8) // TODO: Handle tall sprites
+                                && spriteBuffer.Count < 10)
+                            {
+                                spriteBuffer.Add(currentSprite);
+                            }
+                        }
+
+                        ppuState = PPU_STATE.Drawing;
+                    }
+                    break;
+                case PPU_STATE.Drawing: // MODE 3
+                    {
+                        // Background Pixel Fetching
                         // Fetch Tile No
                         // Fetch Tile Data(Low)
                         // Fetch Tile Data (High)
                         // Push to FIFO
 
-                // H-Blank (Mode 0)
+                        ppuState = PPU_STATE.H_Blank;
+                    }
+                    break;
+                case PPU_STATE.H_Blank: // MODE 0
+                    {
+                        LY++;
+                        if(LY >= 144)
+                        {
+                            ppuState = PPU_STATE.V_Blank;
+                        }       
+                        else
+                        {
+                            ppuState = PPU_STATE.OAM_Scan;
+                        }
+                    }
+                    break;
+                case PPU_STATE.V_Blank: // MODE 1
+                    {
+                        LY++;
+                        if (LY >= 153) // idle for 10 lines
+                        {
+                            ppuState = PPU_STATE.OAM_Scan;
+                        }
+                    }
+                    break;
             }
-
-            // V-Blank (Mode 1)
         }
     }
 }
