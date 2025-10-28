@@ -23,6 +23,8 @@ namespace GBCore.Graphics
 
         private PPU_STATE _ppuState = PPU_STATE.OAM_Scan;
 
+        public bool readyToRender = false;
+
         private long _ticks = 0;
 
         PixelFetcher _pixelFetcher; 
@@ -76,7 +78,7 @@ namespace GBCore.Graphics
         //byte[,] Window = new byte[256, 256]; // Overlay over Background, Position WX, WY // 32x32 tiles, 256x256 pixels
         //byte[,] Viewport = new byte[160, 144]; // Currently visible 20x18 tiles, 160x144 pixels
 
-        private byte[,] Screen = new byte[160, 144];
+        public int[,] ScreenBuffer = new int[160, 154];
 
         private byte LY = 0;
 
@@ -132,19 +134,15 @@ namespace GBCore.Graphics
                     int pixel = _pixelFetcherQueue.Dequeue();
                     if (pixel != -1)
                     {
-                        if (pixel == 0)
+                        if (_y < 144)
                         {
-                            Console.Write("  ");
-                        }
-                        else
-                        {
-                            Console.Write("██");
+                            ScreenBuffer[_x, LY] = pixel;
                         }
                         _x++;
                     }                    
                     
                     if (_x == 160)
-                    {
+                    {                        
                         _ppuState = PPU_STATE.H_Blank;
                     }                    
                     break;
@@ -161,7 +159,7 @@ namespace GBCore.Graphics
                         }
                         else
                         {
-                            Console.WriteLine();
+                            //Console.WriteLine();
                             _ppuState = PPU_STATE.OAM_Scan;
                         } 
                     }                    
@@ -175,8 +173,8 @@ namespace GBCore.Graphics
                         
                         if (LY >= SCANLINES + 10)
                         {
-                            Console.Clear();
-                                                        
+                            //Console.Clear();
+                            readyToRender = true;
                             _ppuState = PPU_STATE.OAM_Scan;
                             LY = 0;
                         }

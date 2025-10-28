@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="CommandLineParser" Version="2.9.1" />
+    <PackageReference Include="Sayers.SDL2.Core" Version="1.0.11" />
   </ItemGroup>
 
 </Project>

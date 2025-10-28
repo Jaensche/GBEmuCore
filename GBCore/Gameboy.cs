@@ -1,33 +1,59 @@
-﻿namespace GBCore
+﻿using GBCore.Graphics;
+
+namespace GBCore
 {
     internal class Gameboy
     {
         private readonly Memory _ram;        
         private readonly CPU _cpu;
-        private readonly Graphics.PPU _ppu;
+        private readonly PPU _ppu;
+        private readonly Screen _screen;
 
         public Gameboy(bool traceEnabled)
         {
             _ram = new Memory(0x10000);
             _cpu = new CPU(traceEnabled, _ram);
-            _ppu = new Graphics.PPU(_ram);
+            _ppu = new PPU(_ram);
+            _screen = new Screen();
         }
 
         public void Run(byte[] code, long maxInstr = 0)
         {
-            _cpu.Load(code);
+            try
+            {                
+                _screen.Setup();
+                _cpu.Load(code);
 
-            long count = 0;
-            long cpuCycles = 0;
-            while (count < maxInstr || maxInstr == 0)
-            {
-                cpuCycles = _cpu.ExecuteNext();
-                for (int i = 0; i < cpuCycles*16; i++) // TODO: Why is this multiplier needed to make the logo scroll?
+                long count = 0;
+                long cpuCycles = 0;
+                while (count < maxInstr || maxInstr == 0)
                 {
-                    _ppu.Cycle();
+                    cpuCycles = _cpu.ExecuteNext();
+                    for (int i = 0; i < cpuCycles * 64; i++) // TODO: Why is this multiplier needed to make the logo scroll?
+                    {
+                        _ppu.Cycle();
+                    }
+
+                    if (_ppu.readyToRender)
+                    {
+                        _screen.Render(_ppu.ScreenBuffer);
+                        
+                        if(_screen.PollEvents() == -1)
+                        {
+                            break;
+                        }
+                        _ppu.readyToRender = false;
+                    }
+
+                    count++;
+
+                    
                 }
-                count++;
-            }            
+            }
+            finally 
+            { 
+                _screen.CleanUp(); 
+            }
         }
     }
 }
