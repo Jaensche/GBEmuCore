@@ -24,6 +24,11 @@
                 data = 0x00;
             }
 
+            if(addr == 0xFF42)
+            {
+
+            }
+
             _ram[addr] = data;
         }
     }

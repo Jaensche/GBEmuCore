@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 [assembly: InternalsVisibleTo("GbCoreTest")]
 namespace GBCore
@@ -52,7 +53,7 @@ namespace GBCore
 
     public class CPU
     {
-        private const ushort PROGMEMSTART = 0x100;
+        private const ushort PROGMEMSTART = 0x00;
 
         public const int B = 0;
         public const int C = 1;
