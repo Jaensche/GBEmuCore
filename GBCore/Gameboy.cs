@@ -19,6 +19,8 @@ namespace GBCore
 
         public void Run(byte[] code, long maxInstr = 0)
         {
+            // TODO: Slow down to the correct clock speed
+
             try
             {                
                 _screen.Setup();
@@ -29,7 +31,7 @@ namespace GBCore
                 while (count < maxInstr || maxInstr == 0)
                 {
                     cpuCycles = _cpu.ExecuteNext();
-                    for (int i = 0; i < cpuCycles * 64; i++) // TODO: Why is this multiplier needed to make the logo scroll?
+                    for (int i = 0; i < cpuCycles * 64; i++)
                     {
                         _ppu.Cycle();
                     }
@@ -37,8 +39,9 @@ namespace GBCore
                     if (_ppu.readyToRender)
                     {
                         _screen.Render(_ppu.ScreenBuffer);
-                        
-                        if(_screen.PollEvents() == -1)
+                        _ppu.ScreenBuffer = new int[160, 144];
+
+                        if (_screen.PollEvents() == -1)
                         {
                             break;
                         }
@@ -46,8 +49,6 @@ namespace GBCore
                     }
 
                     count++;
-
-                    
                 }
             }
             finally 

@@ -88,7 +88,7 @@ namespace GBCore.Graphics
                         SDL.SDL_RenderFillRect(renderer, ref rect);
                     }
                 }
-            }            
+            }
 
             // Switches out the currently presented render surface with the one we just did work on.
             SDL.SDL_RenderPresent(renderer);
