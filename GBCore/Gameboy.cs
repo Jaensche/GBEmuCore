@@ -9,10 +9,10 @@ namespace GBCore
         private readonly PPU _ppu;
         private readonly Screen _screen;
 
-        public Gameboy(bool traceEnabled)
+        public Gameboy(bool traceEnabled, ushort progMemStart)
         {
             _ram = new Memory(0x10000);
-            _cpu = new CPU(traceEnabled, _ram);
+            _cpu = new CPU(traceEnabled, _ram, progMemStart);
             _ppu = new PPU(_ram);
             _screen = new Screen();
         }
@@ -31,7 +31,7 @@ namespace GBCore
                 while (count < maxInstr || maxInstr == 0)
                 {
                     cpuCycles = _cpu.ExecuteNext();
-                    for (int i = 0; i < cpuCycles * 64; i++)
+                    for (int i = 0; i < cpuCycles*64; i++)
                     {
                         _ppu.Cycle();
                     }
@@ -39,7 +39,7 @@ namespace GBCore
                     if (_ppu.readyToRender)
                     {
                         _screen.Render(_ppu.ScreenBuffer);
-                        _ppu.ScreenBuffer = new int[160, 144];
+                        //_ppu.ScreenBuffer = new int[160, 144];
 
                         if (_screen.PollEvents() == -1)
                         {

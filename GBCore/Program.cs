@@ -11,6 +11,9 @@ namespace GBCore
             [Option('r', "rom", Required = true, HelpText = "Rom file to run")]
             public string RomFile { get; set; }
 
+            [Option('s', "start", Required = false, HelpText = "Address to start executing code from")]
+            public ushort ProgMemStart { get; set; }
+
             [Option('v', "verbose", Required = false, HelpText = "Set output to verbose")]
             public bool Verbose { get; set; }            
 
@@ -26,6 +29,7 @@ namespace GBCore
             bool traceEnabled = false;
             string rom = string.Empty;
             long maxInstr = 0;
+            ushort progMemStart = 0;
 
             StreamWriter writer = null;
             Parser.Default
@@ -42,6 +46,7 @@ namespace GBCore
                     }
                     maxInstr = options.MaxInstructions;
                     rom = options.RomFile;
+                    progMemStart = options.ProgMemStart;
                 });
 
             byte[] nintendoLogo =
@@ -59,7 +64,7 @@ namespace GBCore
             byte[] boot = File.ReadAllBytes(rom);
             Array.Copy(boot, 0, code, 0x0000, boot.Length);
 
-            Gameboy gameboy = new Gameboy(traceEnabled);
+            Gameboy gameboy = new Gameboy(traceEnabled, progMemStart);
             gameboy.Run(code, maxInstr);
 
             if(writer != null)

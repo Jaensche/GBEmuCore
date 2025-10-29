@@ -17,9 +17,10 @@ namespace GBCore.Graphics
         private const int OAM_START = 0xFE00;
         private const int OAM_END = 0xFE9F;
         private const int OAM_ENTRY_LENGTH = 4;        
-        private const int BG_MAP_A_START = 0x9800;
+        private const int BG_MAP_A_START_ADDR = 0x9800;
         private const int BG_MAP_A_END = 0x9BFF;
-        private const int SCY = 0xFF42;
+        private const int SCY_ADDR = 0xFF42;
+        private const int LY_ADDR = 0xFF44;
 
         private PPU_STATE _ppuState = PPU_STATE.OAM_Scan;
 
@@ -78,9 +79,9 @@ namespace GBCore.Graphics
         //byte[,] Window = new byte[256, 256]; // Overlay over Background, Position WX, WY // 32x32 tiles, 256x256 pixels
         //byte[,] Viewport = new byte[160, 144]; // Currently visible 20x18 tiles, 160x144 pixels
 
-        public int[,] ScreenBuffer = new int[160, 154];
+        public int[] ScreenBuffer = new int[160 * 154];
 
-        private byte LY = 0;
+        //private byte LY = 0;
 
         private readonly List<Sprite> spriteBuffer = new List<Sprite>();                  
 
@@ -111,11 +112,12 @@ namespace GBCore.Graphics
                     if(_ticks == 80)
                     {
                         _x = 0;
-                        byte scy = _ram.Read(SCY);
+                        byte scy = _ram.Read(SCY_ADDR);
+                        byte ly = _ram.Read(LY_ADDR);
                         
-                        _y = (ushort)(scy + LY);
+                        _y = (ushort)(scy + ly);
                         ushort tileLine = (ushort)(_y % 8);
-                        ushort tileMapRowAddr = (ushort)(BG_MAP_A_START + (ushort)(_y / 8) * 32);
+                        ushort tileMapRowAddr = (ushort)(BG_MAP_A_START_ADDR + (ushort)(_y / 8) * 32);
                         _pixelFetcher.FetchReset(tileMapRowAddr, tileLine);
 
                         _ppuState = PPU_STATE.Drawing;
@@ -136,7 +138,8 @@ namespace GBCore.Graphics
                     {
                         if (_y < 144)
                         {
-                            ScreenBuffer[_x, LY] = pixel;
+                            byte ly = _ram.Read(LY_ADDR);
+                            ScreenBuffer[_x + ly * 160] = pixel;
                         }
                         _x++;
                     }                    
@@ -152,8 +155,11 @@ namespace GBCore.Graphics
                     {
                         _ticks = 0;
 
-                        LY++;
-                        if (LY >= SCANLINES)
+                        byte ly = _ram.Read(LY_ADDR);
+                        ly++;
+                        _ram.Write(LY_ADDR, ly);
+
+                        if (ly >= SCANLINES)
                         {
                             _ppuState = PPU_STATE.V_Blank;
                         }
@@ -169,14 +175,17 @@ namespace GBCore.Graphics
                     if (_ticks == 456)
                     {
                         _ticks = 0;
-                        LY++;
-                        
-                        if (LY >= SCANLINES + 10)
+
+                        byte ly = _ram.Read(LY_ADDR);
+                        ly++;
+                        _ram.Write(LY_ADDR, ly);
+
+                        if (ly >= SCANLINES + 10)
                         {
                             //Console.Clear();
                             readyToRender = true;
                             _ppuState = PPU_STATE.OAM_Scan;
-                            LY = 0;
+                            _ram.Write(LY_ADDR, 0);
                         }
                     }                    
                     break;

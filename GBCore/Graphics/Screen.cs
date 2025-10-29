@@ -1,5 +1,6 @@
 ﻿using SDL2;
 using System;
+using System.Runtime.InteropServices;
 
 namespace GBCore.Graphics
 {
@@ -7,6 +8,7 @@ namespace GBCore.Graphics
     {
         private IntPtr window;
         private IntPtr renderer;
+        private IntPtr texture;
 
         public void Setup()
         {
@@ -37,6 +39,10 @@ namespace GBCore.Graphics
                 SDL.SDL_RendererFlags.SDL_RENDERER_ACCELERATED |
                 SDL.SDL_RendererFlags.SDL_RENDERER_PRESENTVSYNC);
 
+            texture = SDL.SDL_CreateTexture(renderer, SDL.SDL_PIXELFORMAT_ARGB8888, (int)SDL.SDL_TextureAccess.SDL_TEXTUREACCESS_STREAMING, 160, 144);
+
+            SDL.SDL_SetTextureBlendMode(texture, SDL.SDL_BlendMode.SDL_BLENDMODE_BLEND);
+
             if (renderer == IntPtr.Zero)
             {
                 Console.WriteLine($"There was an issue creating the renderer. {SDL.SDL_GetError()}");
@@ -52,45 +58,28 @@ namespace GBCore.Graphics
                 {
                     case SDL.SDL_EventType.SDL_QUIT:
                         return -1;
-                        
+
                 }
             }
 
             return 0;
         }
 
-        public void Render(int[,] screenBuffer)
+        public void Render(int[] screenBuffer)
         {
-            // Sets the color that the screen will be cleared with.
+            IntPtr pixelsPtr;
+            int pitch;
+            SDL.SDL_LockTexture(texture, IntPtr.Zero, out pixelsPtr, out pitch);
+
+            int[] rgbBuffer = ConvertToTexturePixels(screenBuffer, 160, 144);
+
+            Marshal.Copy(rgbBuffer, 0, pixelsPtr, rgbBuffer.Length);
+
+            SDL.SDL_UnlockTexture(texture);
+
             SDL.SDL_SetRenderDrawColor(renderer, 155, 188, 15, 255);
-
-            // Clears the current render surface.
             SDL.SDL_RenderClear(renderer);
-
-            // Set the color to red before drawing our shape
-            SDL.SDL_SetRenderDrawColor(renderer, 15, 56, 15, 255);            
-
-            // Draw a filled in rectangle.
-            for (int x = 0; x < 160; x++)
-            {
-                for (int y = 0; y < 144; y++)
-                {
-                    if (screenBuffer[x, y] == 1)
-                    {
-                        var rect = new SDL.SDL_Rect
-                        {
-                            x = x*2,
-                            y = y*2,
-                            w = 2,
-                            h = 2
-                        };
-
-                        SDL.SDL_RenderFillRect(renderer, ref rect);
-                    }
-                }
-            }
-
-            // Switches out the currently presented render surface with the one we just did work on.
+            SDL.SDL_RenderCopy(renderer, texture, IntPtr.Zero, IntPtr.Zero);
             SDL.SDL_RenderPresent(renderer);
         }
 
@@ -99,6 +88,26 @@ namespace GBCore.Graphics
             SDL.SDL_DestroyRenderer(renderer);
             SDL.SDL_DestroyWindow(window);
             SDL.SDL_Quit();
+        }
+
+        private int[] ConvertToTexturePixels(int[] binaryPixels, int width, int height)
+        {
+            int[] rgbaPixels = new int[width * height];
+
+            for (int i = 0; i < rgbaPixels.Length; i++)
+            {
+                if (binaryPixels[i] == 1)
+                {
+                    rgbaPixels[i] = unchecked((int)0xFF0F380F);
+                }
+                else
+                {
+                    // Transparent
+                    rgbaPixels[i] = unchecked(0); 
+                }
+            }
+
+            return rgbaPixels;
         }
     }
 }

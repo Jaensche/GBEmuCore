@@ -53,8 +53,6 @@ namespace GBCore
 
     public class CPU
     {
-        private const ushort PROGMEMSTART = 0x00;
-
         public const int B = 0;
         public const int C = 1;
         public const int D = 2;
@@ -85,10 +83,14 @@ namespace GBCore
 
         public bool _haltState;
 
-        public CPU(bool traceEnabled, Memory ram)
+        private ushort _progMemStart;
+
+        public CPU(bool traceEnabled, Memory ram, ushort progMemStart)
         {
             _traceEnabled = traceEnabled;
             _ram = ram;
+            _progMemStart = progMemStart;
+
             _timer = new Timer(ram);
             Reset();
         }
@@ -147,7 +149,7 @@ namespace GBCore
 
         public void Reset()
         {
-            PC = PROGMEMSTART;
+            PC = _progMemStart;
 
             AF = 0x01B0;
             BC = 0x0013;
@@ -155,7 +157,7 @@ namespace GBCore
             HL = 0x014D;
             SP = 0xFFFE;
 
-            IME = true;
+            IME = false;
 
             _ram.Write(0xFF05, 0x00);
             _ram.Write(0xFF06, 0x00);
@@ -193,9 +195,6 @@ namespace GBCore
             _ram.Write(0xFFFF, (byte)(_ram.Read(0xFFFF) | (byte)IrqFlags.Serial));
             _ram.Write(0xFFFF, (byte)(_ram.Read(0xFFFF) | (byte)IrqFlags.Timer));
             _ram.Write(0xFFFF, (byte)(_ram.Read(0xFFFF) | (byte)IrqFlags.VBlank));
-
-            // Hack for initial FY
-            _ram.Write(0xFF44, 0x90);
 
             _cycleCount = 0;
             RedrawFlag = false;
