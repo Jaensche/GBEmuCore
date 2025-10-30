@@ -2014,7 +2014,17 @@ namespace GBCore
 
         private void SWAP_HL()
         {
-            HL = APU.SWP(HL);            
+            byte result = (byte)(((_ram.Read(HL) & 0xF0) >> 4) | ((_ram.Read(HL) & 0x0F) << 4));
+
+            SetFlag(Flags.Z, result == 0);
+            SetFlag(Flags.N, false);
+            SetFlag(Flags.H, false);
+            SetFlag(Flags.C, false);
+
+            _ram.Write(HL, result);
+
+            PC++;
+            _cycleCount += 4;
         }
 
         private void RLC_r(byte opcode)
@@ -2115,7 +2125,7 @@ namespace GBCore
         {
             byte x = (byte)((opcode & 0b00111000) >> 3);
 
-            _ram.Write(HL, (byte)(_ram.Read(HL) & (0b11111110 << x)));
+            _ram.Write(HL, (byte)(_ram.Read(HL) & ~(1 << x)));
 
             PC++;
             _cycleCount += 8;
@@ -2204,8 +2214,8 @@ namespace GBCore
 
         private void SRA_HL()
         {
-            byte result = (byte)(_ram.Read(HL) >> 1);
-            SetFlag(Flags.C, ((_ram.Read(HL) & 0x01) > 0));
+            byte result = (byte)((_ram.Read(HL) >> 1) | (_ram.Read(HL) & 0x80));
+            SetFlag(Flags.C, (_ram.Read(HL) & 0x01) > 0);
             _ram.Write(HL, result);
 
             SetFlag(Flags.Z, result == 0);

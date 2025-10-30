@@ -21,6 +21,8 @@ namespace GBCore.Graphics
         private const int BG_MAP_A_END = 0x9BFF;
         private const int SCY_ADDR = 0xFF42;
         private const int LY_ADDR = 0xFF44;
+        private const int GB_SCREEN_WIDTH = 160;
+        private const int GB_SCREEN_HEIGHT = 144;
 
         private PPU_STATE _ppuState = PPU_STATE.OAM_Scan;
 
@@ -79,7 +81,7 @@ namespace GBCore.Graphics
         //byte[,] Window = new byte[256, 256]; // Overlay over Background, Position WX, WY // 32x32 tiles, 256x256 pixels
         //byte[,] Viewport = new byte[160, 144]; // Currently visible 20x18 tiles, 160x144 pixels
 
-        public int[] ScreenBuffer = new int[160 * 154];
+        public int[] ScreenBuffer = new int[GB_SCREEN_WIDTH * (GB_SCREEN_HEIGHT + 10)];
 
         //private byte LY = 0;
 
@@ -139,12 +141,12 @@ namespace GBCore.Graphics
                         if (_y < 144)
                         {
                             byte ly = _ram.Read(LY_ADDR);
-                            ScreenBuffer[_x + ly * 160] = pixel;
+                            ScreenBuffer[_x + ly * GB_SCREEN_WIDTH] = pixel;
                         }
                         _x++;
                     }                    
                     
-                    if (_x == 160)
+                    if (_x == GB_SCREEN_WIDTH)
                     {                        
                         _ppuState = PPU_STATE.H_Blank;
                     }                    
@@ -155,9 +157,7 @@ namespace GBCore.Graphics
                     {
                         _ticks = 0;
 
-                        byte ly = _ram.Read(LY_ADDR);
-                        ly++;
-                        _ram.Write(LY_ADDR, ly);
+                        byte ly = LYPlusOne();
 
                         if (ly >= SCANLINES)
                         {
@@ -165,7 +165,6 @@ namespace GBCore.Graphics
                         }
                         else
                         {
-                            //Console.WriteLine();
                             _ppuState = PPU_STATE.OAM_Scan;
                         } 
                     }                    
@@ -174,24 +173,32 @@ namespace GBCore.Graphics
                 case PPU_STATE.V_Blank: // MODE 1                    
                     if (_ticks == 456)
                     {
-                        _ticks = 0;
+                        // VBlank Interrupt
+                        byte currentIrqFlags = _ram.Read(CPU.IRQ_FLAGS);
+                        _ram.Write(CPU.IRQ_FLAGS, (byte)(currentIrqFlags & (byte)IrqFlags.VBlank));
 
-                        byte ly = _ram.Read(LY_ADDR);
-                        ly++;
-                        _ram.Write(LY_ADDR, ly);
+                        _ticks = 0;
+                        byte ly = LYPlusOne();
 
                         if (ly >= SCANLINES + 10)
                         {
-                            //Console.Clear();
                             readyToRender = true;
                             _ppuState = PPU_STATE.OAM_Scan;
                             _ram.Write(LY_ADDR, 0);
                         }
-                    }                    
+                    }
                     break;
             }
 
             _ticks++;
+        }
+
+        private byte LYPlusOne()
+        {
+            byte ly = _ram.Read(LY_ADDR);
+            ly++;
+            _ram.Write(LY_ADDR, ly);
+            return ly;
         }
     }
 }

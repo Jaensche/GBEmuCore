@@ -31,7 +31,7 @@ namespace GBCore
                 while (count < maxInstr || maxInstr == 0)
                 {
                     cpuCycles = _cpu.ExecuteNext();
-                    for (int i = 0; i < cpuCycles*64; i++)
+                    for (int i = 0; i < cpuCycles; i++)
                     {
                         _ppu.Cycle();
                     }
@@ -39,7 +39,6 @@ namespace GBCore
                     if (_ppu.readyToRender)
                     {
                         _screen.Render(_ppu.ScreenBuffer);
-                        //_ppu.ScreenBuffer = new int[160, 144];
 
                         if (_screen.PollEvents() == -1)
                         {
