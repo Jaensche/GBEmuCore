@@ -10,6 +10,9 @@ namespace GBCore.Graphics
         private IntPtr renderer;
         private IntPtr texture;
 
+        private int GB_SCREEN_SIZE_X = 160;
+        private int GB_SCREEN_SIZE_Y = 144;
+
         public void Setup()
         {
             // Initilizes SDL.
@@ -23,9 +26,10 @@ namespace GBCore.Graphics
                 "GBEmuCore",
                 SDL.SDL_WINDOWPOS_UNDEFINED,
                 SDL.SDL_WINDOWPOS_UNDEFINED,
-                320,
-                288,
-                SDL.SDL_WindowFlags.SDL_WINDOW_SHOWN);
+                GB_SCREEN_SIZE_X * 4,
+                GB_SCREEN_SIZE_Y * 4,
+                SDL.SDL_WindowFlags.SDL_WINDOW_SHOWN |
+                    SDL.SDL_WindowFlags.SDL_WINDOW_RESIZABLE);
 
             if (window == IntPtr.Zero)
             {
@@ -59,6 +63,35 @@ namespace GBCore.Graphics
                     case SDL.SDL_EventType.SDL_QUIT:
                         return -1;
 
+                    case SDL.SDL_EventType.SDL_WINDOWEVENT:
+
+                        if(e.window.windowEvent == SDL.SDL_WindowEventID.SDL_WINDOWEVENT_RESIZED)
+                        {
+                            int newW = e.window.data1;
+                            int newH = e.window.data2;
+
+                            float aspect = GB_SCREEN_SIZE_X / GB_SCREEN_SIZE_Y;
+
+                            // Maintain the correct aspect ratio
+                            float currentAspect = (float)newW / newH;
+                            if (Math.Abs(currentAspect - aspect) > 0.01f)
+                            {
+                                if (currentAspect > aspect)
+                                {
+                                    // Window too wide → adjust width
+                                    newW = (int)(newH * aspect);
+                                }
+                                else
+                                {
+                                    // Window too tall → adjust height
+                                    newH = (int)(newW / aspect);
+                                }
+
+                                SDL.SDL_SetWindowSize(window, newW, newH);
+                            }
+                        }
+                        break;
+
                 }
             }
 
@@ -67,13 +100,16 @@ namespace GBCore.Graphics
 
         public void Render(int[] screenBuffer)
         {
-            IntPtr pixelsPtr;
-            int pitch;
-            SDL.SDL_LockTexture(texture, IntPtr.Zero, out pixelsPtr, out pitch);
+            SDL.SDL_LockTexture(texture, IntPtr.Zero, out nint pixelsPtr, out int pitch);
 
             int[] rgbBuffer = ConvertToTexturePixels(screenBuffer, 160, 144);
 
             Marshal.Copy(rgbBuffer, 0, pixelsPtr, rgbBuffer.Length);
+
+            SDL.SDL_GetWindowSize(window, out int winW, out int winH);
+
+            // Calculate letterboxed destination rectangle
+            //SDL.SDL_Rect dstRect = CalculateLetterbox(winW, winH, GB_SCREEN_SIZE_X, GB_SCREEN_SIZE_Y);
 
             SDL.SDL_UnlockTexture(texture);
 
@@ -108,6 +144,6 @@ namespace GBCore.Graphics
             }
 
             return rgbaPixels;
-        }
+        }        
     }
 }
