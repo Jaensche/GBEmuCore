@@ -106,11 +106,6 @@ namespace GBCore.Graphics
 
             Marshal.Copy(rgbBuffer, 0, pixelsPtr, rgbBuffer.Length);
 
-            SDL.SDL_GetWindowSize(window, out int winW, out int winH);
-
-            // Calculate letterboxed destination rectangle
-            //SDL.SDL_Rect dstRect = CalculateLetterbox(winW, winH, GB_SCREEN_SIZE_X, GB_SCREEN_SIZE_Y);
-
             SDL.SDL_UnlockTexture(texture);
 
             SDL.SDL_SetRenderDrawColor(renderer, 155, 188, 15, 255);
