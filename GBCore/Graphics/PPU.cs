@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace GBCore.Graphics
 {
@@ -25,8 +24,6 @@ namespace GBCore.Graphics
         private const int GB_SCREEN_HEIGHT = 144;
 
         private PPU_STATE _ppuState = PPU_STATE.OAM_Scan;
-
-        public bool readyToRender = false;
 
         private long _ticks = 0;
 
@@ -182,7 +179,6 @@ namespace GBCore.Graphics
 
                         if (ly >= SCANLINES + 10)
                         {
-                            readyToRender = true;
                             _ppuState = PPU_STATE.OAM_Scan;
                             _ram.Write(LY_ADDR, 0);
                         }

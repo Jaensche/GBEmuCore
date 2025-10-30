@@ -10,7 +10,6 @@ namespace GBCore
         private const ushort TIMA = 0xFF05;
         private const ushort TMA = 0xFF06;
         private const ushort TAC = 0xFF07;
-        int timerDivider = 0;
 
         public const ushort IRQ_FLAGS = 0xFF0F;
 
@@ -19,52 +18,55 @@ namespace GBCore
             _ram = ram;
         }
 
-        public void TimerTick(long ticks)
+        private ushort internalDivider = 0;
+
+        // Previous state of the bit we watch for rising/falling edges
+        private bool lastTimerBit;
+
+        public void TimerTick(long cycles)
         {
-            for (long i = 0; i < ticks; i++)
+            // Each CPU instruction calls this with the number of cycles it took
+            for (int i = 0; i < cycles; i++)
             {
-                timerDivider++;
+                internalDivider++;
+
+                // Update visible DIV register (upper 8 bits of divider)
+                _ram.Write(DIV, (byte)(internalDivider >> 8));
 
                 byte tac = _ram.Read(TAC);
-                byte inputClockSelect = (byte)(tac & 0b00000011);
-                bool timerEnable = (tac & 0b00000100) > 0;
+                bool timerEnable = (tac & 0b00000100) != 0;
+                int clockSelect = tac & 0b11;
 
-                if (timerEnable)
+                // Determine which bit of the divider the timer listens to
+                int bitIndex = clockSelect switch
+                {
+                    0b00 => 9,
+                    0b01 => 3,
+                    0b10 => 5,
+                    0b11 => 7,
+                    _ => 9
+                };
+
+                bool currentTimerBit = ((internalDivider >> bitIndex) & 1) != 0;
+
+                // On falling edge of this bit, increment TIMA (only if enabled)
+                if (timerEnable && lastTimerBit && !currentTimerBit)
                 {
                     byte tima = _ram.Read(TIMA);
+                    tima++;
 
-                    if (tima == 0xFF)
+                    if (tima == 0x00) // overflow (was 0xFF before increment)
                     {
-                        // Reset TIMA and raise timer interrupt
-                        byte irqFlags = _ram.Read(IRQ_FLAGS);
-                        _ram.Write(IRQ_FLAGS, (byte)((byte)irqFlags | (byte)IrqFlags.Timer));
-                        _ram.Write(TIMA, _ram.Read(TMA));
+                        // Load TMA and request interrupt
+                        tima = _ram.Read(TMA);
+                        byte irq = _ram.Read(IRQ_FLAGS);
+                        _ram.Write(IRQ_FLAGS, (byte)(irq | (byte)IrqFlags.Timer));
                     }
-                    else if (timerDivider % 64 == 0 && inputClockSelect == 0b00) // 1024
-                    {
-                        _ram.Write(TIMA, (byte)(tima + 1));
-                    }
-                    else if (timerDivider % 32 == 0 && inputClockSelect == 0b11) // 256
-                    {
-                        _ram.Write(TIMA, (byte)(tima + 1));
-                    }
-                    else if (timerDivider % 16 == 0 && inputClockSelect == 0b10) // 64
-                    {
-                        _ram.Write(TIMA, (byte)(tima + 1));
-                    }
-                    else if (inputClockSelect == 0b01) // 16
-                    {
-                        _ram.Write(TIMA, (byte)(tima + 1));
-                    }
+
+                    _ram.Write(TIMA, tima);
                 }
 
-                // 16
-                _ram.Write(DIV, (byte)(_ram.Read(DIV) + 1));
-
-                if (timerDivider >= 64)
-                {
-                    timerDivider = 0;
-                }
+                lastTimerBit = currentTimerBit;
             }
         }
     }

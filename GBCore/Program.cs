@@ -58,7 +58,7 @@ namespace GBCore
                 0xBB, 0xBB, 0x67, 0x63, 0x6E, 0x0E, 0xEC, 0xCC,
                 0xDD, 0xDC, 0x99, 0x9F, 0xBB, 0xB9, 0x33, 0x3E
             };
-            byte[] code = new byte[0x8000]; // 32KB dummy ROM
+            byte[] code = new byte[0x10000]; // 32KB dummy ROM
             Array.Copy(nintendoLogo, 0, code, 0x0104, nintendoLogo.Length);
 
             byte[] boot = File.ReadAllBytes(rom);

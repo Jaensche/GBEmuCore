@@ -325,9 +325,9 @@ namespace GBCore
                 case 0x00:
                     if (!_haltState)
                     {
-                        PC++;
-                        _cycleCount += 4;
+                        PC++;                        
                     }
+                    _cycleCount += 4;
                     break;
 
                 // STOP
@@ -342,6 +342,7 @@ namespace GBCore
                         _haltState = true;
                         PC++;
                     }
+                    _cycleCount += 4;
                     break;
 
                 // DI
