@@ -1,4 +1,6 @@
-﻿namespace GBCore.Graphics
+﻿using System.Runtime.InteropServices.Marshalling;
+
+namespace GBCore.Graphics
 {
     public enum FETCH_STATE
     {
@@ -17,14 +19,15 @@
         private ushort _tileLine;
         private FETCH_STATE _fetchState;
         private int _ticks;
-        private Memory _ram;
         private byte _tileId;
-        int[] _pixelData = new int[8];
+        private int[] _pixelData = new int[8];
+        private byte[] _vram; 
+
         FixedSizeQueue _pixelFetcherQueue;
 
-        public PixelFetcher(FixedSizeQueue pixelFetcherQueue, Memory ram) 
+        public PixelFetcher(FixedSizeQueue pixelFetcherQueue, byte[] vram) 
         {
-            _ram = ram;
+            _vram = vram;
             _pixelFetcherQueue = pixelFetcherQueue;
             _ticks = 0;
         }
@@ -50,7 +53,7 @@
             switch (_fetchState)
             {
                 case FETCH_STATE.ReadID:                    
-                    _tileId = _ram.Read((ushort)(_mapAddr + _tileIndex));
+                    _tileId = _vram[(ushort)(_mapAddr - 0x8000 + _tileIndex)];
                     _fetchState = FETCH_STATE.ReadData0;                    
                     break;
 
@@ -59,7 +62,7 @@
 
                     ushort addr = (ushort)(offset + (ushort)(_tileLine * 2));
 
-                    byte data = _ram.Read(addr);
+                    byte data = _vram[addr - 0x8000];
                     for (int bitPos = 0; bitPos <= 7; bitPos++)
                     {
                         _pixelData[bitPos] = data >> bitPos & 1;

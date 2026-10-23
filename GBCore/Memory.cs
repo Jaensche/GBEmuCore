@@ -16,23 +16,18 @@ namespace GBCore
 
         public byte Read(ushort addr)
         {
-            // block reads by PPU
-            //if (addr >= 0x8000 && addr <= 0x9FFF)
-            //{
-            //    if (!ppu.IsVramAccessible)
-            //    {
-            //        return 0xFF;
-            //    }
-            //}
-
             if (addr == 0xFF04)
             {
                 return _timer.DivValue;                
             }
 
-            byte data = _memory[addr];
+            // reroute VRAM reads to PPU
+            if (addr >= 0x8000 && addr <= 0x9FFF)
+            {
+                return _ppu.ReadVram(addr);
+            }
 
-            return data;
+            return _memory[addr];
         }
 
         byte SB;
@@ -71,13 +66,11 @@ namespace GBCore
                 }
             }
 
-            // block writes by PPU
+            // reroute VRAM writes to PPU
             if (addr >= 0x8000 && addr <= 0x9FFF)
             {
-                if (!_ppu.IsVramAccessible)
-                {
-                    return;
-                }
+               _ppu.WriteVram(addr, data);
+               return;
             }
 
             _memory[addr] = data;
