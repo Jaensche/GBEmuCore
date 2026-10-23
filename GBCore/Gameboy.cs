@@ -6,7 +6,8 @@ namespace GBCore
 {
     internal class Gameboy
     {
-        private readonly Memory _ram;        
+        private readonly Memory _memory;      
+        private readonly Timer _timer;  
         private readonly CPU _cpu;
         private readonly PPU _ppu;
         private readonly Screen _screen;
@@ -17,12 +18,15 @@ namespace GBCore
 
         Stopwatch stopwatch = new Stopwatch();
         double targetFrameTime = 1000.0 / FRAME_RATE; // in milliseconds
-
+        
         public Gameboy(bool traceEnabled, ushort progMemStart)
         {
-            _ram = new Memory(0x10000);
-            _cpu = new CPU(traceEnabled, _ram, progMemStart);
-            _ppu = new PPU(_ram);
+            _memory = new Memory(0x10000);
+            _timer = new Timer(_memory);
+            _ppu = new PPU(_memory);
+            _memory._ppu = _ppu;
+            _memory._timer = _timer;
+            _cpu = new CPU(traceEnabled, _memory, progMemStart);            
             _screen = new Screen();
         }
 
@@ -33,10 +37,9 @@ namespace GBCore
                 _screen.Setup();
                 _cpu.Load(code);
 
-                long count = 0;
                 long cpuCycles = 0;
                 long cyclesThisFrame = 0;
-                while (count < maxInstr || maxInstr == 0)
+                while (true)
                 {
                     cyclesThisFrame = 0;
 
@@ -47,6 +50,7 @@ namespace GBCore
                         {
                             _ppu.Cycle();
                         }
+                        _timer.TimerTick(cpuCycles);
 
                         cyclesThisFrame += cpuCycles;
                     }
@@ -65,8 +69,6 @@ namespace GBCore
                         if (delay > 0)
                             Thread.Sleep(delay);
                     }
-
-                    count++;
                 }
             }
             finally 

@@ -22,6 +22,7 @@ namespace GBCore.Graphics
         private const int LY_ADDR = 0xFF44;
         private const int GB_SCREEN_WIDTH = 160;
         private const int GB_SCREEN_HEIGHT = 144;
+        private const int LCDC = 0xFF40;
 
         private PPU_STATE _ppuState = PPU_STATE.OAM_Scan;
 
@@ -32,6 +33,8 @@ namespace GBCore.Graphics
         private ushort _x;
         private ushort _y;
 
+        public bool IsVramAccessible => _ppuState == PPU_STATE.H_Blank || _ppuState == PPU_STATE.V_Blank;
+        public bool IsOamAccessible => _ppuState == PPU_STATE.H_Blank || _ppuState == PPU_STATE.V_Blank;
 
         public PPU(Memory ram) 
         {
@@ -82,54 +85,34 @@ namespace GBCore.Graphics
 
         //private byte LY = 0;
 
-        private readonly List<Sprite> spriteBuffer = new List<Sprite>();                  
+        private readonly List<Sprite> spriteBuffer = new List<Sprite>();
 
         public void Cycle()
         {
             switch (_ppuState)
             {
-                case PPU_STATE.OAM_Scan: // MODE 2
-                    
-                    // OAM Scan (Mode 2)
-                    //for (ushort sprite = 0; sprite < 40; sprite++)
-                    //{
-                    //    Sprite currentSprite = new Sprite(
-                    //        _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH))), 
-                    //        _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH) + 1)), 
-                    //        _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH) + 2)), 
-                    //        _ram.Read((ushort)(OAM_START + (sprite * OAM_ENTRY_LENGTH) + 3)));
-
-                    //    if (currentSprite.X >= 0
-                    //        && (LY + 16) >= currentSprite.Y
-                    //        && (LY + 16) < (currentSprite.Y + 8) // TODO: Handle tall sprites
-                    //        && spriteBuffer.Count < 10)
-                    //    {
-                    //        spriteBuffer.Add(currentSprite);
-                    //    }
-                    //}
-
-                    if(_ticks == 80)
+                case PPU_STATE.OAM_Scan: // MODE 2 (80 cycles)
+                    if (_ticks >= 80)
                     {
                         _x = 0;
                         byte scy = _ram.Read(SCY_ADDR);
                         byte ly = _ram.Read(LY_ADDR);
-                        
+
+                        byte lcdc = _ram.Read(LCDC);
+
                         _y = (ushort)(scy + ly);
                         ushort tileLine = (ushort)(_y % 8);
-                        ushort tileMapRowAddr = (ushort)(BG_MAP_A_START_ADDR + (ushort)(_y / 8) * 32);
+                        ushort tileMapRowAddr = (ushort)(BG_MAP_A_START_ADDR + (_y / 8) * 32);
+
                         _pixelFetcher.FetchReset(tileMapRowAddr, tileLine);
 
+                        _ticks = 0;
                         _ppuState = PPU_STATE.Drawing;
-                    }                    
+                    }
                     break;
 
-                case PPU_STATE.Drawing: // MODE 3                    
-                    // Background Pixel Fetching
-                    // Fetch Tile No
-                    // Fetch Tile Data(Low)
-                    // Fetch Tile Data (High)
-                    // Push to FIFO
-
+                case PPU_STATE.Drawing: // MODE 3 (~172 cycles average)
+                                        // Advance the fetcher continuously, not only at the end
                     _pixelFetcher.Tick();
 
                     int pixel = _pixelFetcherQueue.Dequeue();
@@ -141,46 +124,45 @@ namespace GBCore.Graphics
                             ScreenBuffer[_x + ly * GB_SCREEN_WIDTH] = pixel;
                         }
                         _x++;
-                    }                    
-                    
-                    if (_x == GB_SCREEN_WIDTH)
-                    {                        
-                        _ppuState = PPU_STATE.H_Blank;
-                    }                    
-                    break;
+                    }
 
-                case PPU_STATE.H_Blank: // MODE 0
-                    if(_ticks == 456)
+                    if (_ticks >= 172)
                     {
                         _ticks = 0;
+                        _ppuState = PPU_STATE.H_Blank;
+                    }
+                    break;
 
+                case PPU_STATE.H_Blank: // MODE 0 (204 cycles)
+                    if (_ticks >= 204)
+                    {
+                        _ticks = 0;
                         byte ly = LYPlusOne();
 
-                        if (ly >= SCANLINES)
+                        if (ly == 144)
                         {
+                            // Start of VBlank
+                            byte currentIrqFlags = _ram.Read(CPU.IRQ_FLAGS);
+                            _ram.Write(CPU.IRQ_FLAGS, (byte)(currentIrqFlags | (byte)IrqFlags.VBlank));
                             _ppuState = PPU_STATE.V_Blank;
                         }
                         else
                         {
                             _ppuState = PPU_STATE.OAM_Scan;
-                        } 
-                    }                    
+                        }
+                    }
                     break;
 
-                case PPU_STATE.V_Blank: // MODE 1                    
-                    if (_ticks == 456)
+                case PPU_STATE.V_Blank: // MODE 1 (10 lines × 456 cycles)
+                    if (_ticks >= 456)
                     {
-                        // VBlank Interrupt
-                        byte currentIrqFlags = _ram.Read(CPU.IRQ_FLAGS);
-                        _ram.Write(CPU.IRQ_FLAGS, (byte)(currentIrqFlags & (byte)IrqFlags.VBlank));
-
                         _ticks = 0;
                         byte ly = LYPlusOne();
 
-                        if (ly >= SCANLINES + 10)
+                        if (ly > 153)
                         {
-                            _ppuState = PPU_STATE.OAM_Scan;
                             _ram.Write(LY_ADDR, 0);
+                            _ppuState = PPU_STATE.OAM_Scan;
                         }
                     }
                     break;

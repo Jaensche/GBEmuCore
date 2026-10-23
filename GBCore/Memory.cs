@@ -1,32 +1,53 @@
-﻿using System;
+﻿using GBCore.Graphics;
+using System;
 
 namespace GBCore
 {
     public class Memory
     {
-        public byte[] _ram;
+        public byte[] _memory;
+        public PPU _ppu;
+        public Timer _timer;
 
         public Memory(int size) 
         {
-            _ram = new byte[size];
+            _memory = new byte[size];
         }
 
         public byte Read(ushort addr)
         {
-            byte data = _ram[addr];
+            // block reads by PPU
+            //if (addr >= 0x8000 && addr <= 0x9FFF)
+            //{
+            //    if (!ppu.IsVramAccessible)
+            //    {
+            //        return 0xFF;
+            //    }
+            //}
+
+            if (addr == 0xFF04)
+            {
+                return _timer.DivValue;                
+            }
+
+            byte data = _memory[addr];
 
             return data;
         }
 
         byte SB;
         byte SC;
+        
 
         public void Write(ushort addr, byte data)
         {
-            //DIV - Divider Register - Always set to 0x00
+            //DIV - Divider Register - Reset Timer on all writes
             if (addr == 0xFF04)
             {
-                data = 0x00;
+                _timer.Reset();
+
+                //nothing to write to memory
+                return;
             }
 
             if (addr == 0xFF42)
@@ -48,9 +69,18 @@ namespace GBCore
                     Console.Write((char)SB);
                     SC &= 0x7F;
                 }
-            }        
+            }
 
-            _ram[addr] = data;
+            // block writes by PPU
+            if (addr >= 0x8000 && addr <= 0x9FFF)
+            {
+                if (!_ppu.IsVramAccessible)
+                {
+                    return;
+                }
+            }
+
+            _memory[addr] = data;
         }
     }
 }
