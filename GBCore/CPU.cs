@@ -66,7 +66,9 @@ namespace GBCore
         private readonly Memory _memory;
 
         public const ushort IRQ_FLAGS = 0xFF0F;
-        public const ushort IRQ_ENABLE = 0xFFFF;               
+        public const ushort IRQ_ENABLE = 0xFFFF;      
+
+        public const ushort JOYP = 0xFF00;         
 
         public ushort PC; // Program Counter
 
@@ -301,13 +303,7 @@ namespace GBCore
             Console.WriteLine(string.Empty);
         }
 
-        public void Load(byte[] programCode)
-        {
-            for (int i = 0; i < programCode.Length; i++)
-            {
-                _memory.Write((ushort)i, programCode[i]);
-            }
-        }
+        
 
         private void DecodeExecute(byte opcode)
         {

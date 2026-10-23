@@ -8,6 +8,7 @@ namespace GBCore
         public byte[] _memory;
         public PPU _ppu;
         public Timer _timer;
+        public Cartridge _cart;
 
         public Memory(int size) 
         {
@@ -25,6 +26,17 @@ namespace GBCore
             if (addr >= 0x8000 && addr <= 0x9FFF)
             {
                 return _ppu.ReadVram(addr);
+            }
+
+            // reroute Rom reads to Cartride
+            if (addr >= 0x0000 && addr <= 0x7FFF)
+            {
+                return _cart.Read(addr);    
+            }
+
+            if (addr == 0xFF00)
+            {
+                return 0xFF;
             }
 
             return _memory[addr];
@@ -71,6 +83,13 @@ namespace GBCore
             {
                _ppu.WriteVram(addr, data);
                return;
+            }
+
+            // reroute Rom writes to Cartride
+            if (addr >= 0x0000 && addr <= 0x7FFF)
+            {
+                _cart.Write(addr, data);
+                return;
             }
 
             _memory[addr] = data;
