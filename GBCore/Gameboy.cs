@@ -11,6 +11,7 @@ namespace GBCore
         private readonly CPU _cpu;
         private readonly PPU _ppu;
         private readonly Cartridge _cart;
+        private readonly Input _input;
         private readonly Screen _screen;
 
         const double CLOCK_SPEED = 4194304.0; // Hz
@@ -26,9 +27,11 @@ namespace GBCore
             _timer = new Timer(_memory);
             _ppu = new PPU(_memory);
             _cart = new Cartridge();
+            _input = new Input();
             _memory._ppu = _ppu;
             _memory._timer = _timer;
             _memory._cart = _cart;
+            _memory._input = _input;
 
             _cpu = new CPU(traceEnabled, _memory, progMemStart);            
             _screen = new Screen();
@@ -59,9 +62,11 @@ namespace GBCore
                         cyclesThisFrame += cpuCycles;
                     }
 
-                   _screen.Render(_ppu.ScreenBuffer);
+                    _screen.Render(_ppu.ScreenBuffer);
+                    Keys keys = _screen.PollEvents();
+                    _input.SetKeys(keys);
 
-                    if (_screen.PollEvents() == -1)
+                    if (keys.Esc)
                     {
                         break;
                     }

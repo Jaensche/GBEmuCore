@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace GBCore.Graphics
 {
-    internal class Screen
+    public class Screen
     {
         private IntPtr window;
         private IntPtr renderer;
@@ -12,6 +12,8 @@ namespace GBCore.Graphics
 
         private int GB_SCREEN_SIZE_X = 160;
         private int GB_SCREEN_SIZE_Y = 144;
+
+        private Keys _keys = new Keys();
 
         public void Setup()
         {
@@ -53,7 +55,7 @@ namespace GBCore.Graphics
             }
         }
 
-        public int PollEvents()
+        public Keys PollEvents()
         {
             // Check to see if there are any events and continue to do so until the queue is empty.
             while (SDL.SDL_PollEvent(out SDL.SDL_Event e) == 1)
@@ -61,7 +63,8 @@ namespace GBCore.Graphics
                 switch (e.type)
                 {
                     case SDL.SDL_EventType.SDL_QUIT:
-                        return -1;
+                        _keys.Esc = true;
+                        break;;
 
                     case SDL.SDL_EventType.SDL_WINDOWEVENT:
 
@@ -91,11 +94,75 @@ namespace GBCore.Graphics
                             }
                         }
                         break;
+                    case SDL.SDL_EventType.SDL_KEYDOWN:
+                        {
+                            switch(e.key.keysym.sym)
+                            {
+                                case SDL.SDL_Keycode.SDLK_UP:
+                                    _keys.Up = true;
+                                    break;
+                                case SDL.SDL_Keycode.SDLK_DOWN:
+                                    _keys.Down = true;
+                                    break;
+                                case SDL.SDL_Keycode.SDLK_LEFT:
+                                    _keys.Left = true;
+                                    break;
+                                case SDL.SDL_Keycode.SDLK_RIGHT:
+                                    _keys.Right = true;
+                                    break;
+                                case SDL.SDL_Keycode.SDLK_RETURN: // start
+                                    _keys.Start = true;
+                                    break;  
+                                case SDL.SDL_Keycode.SDLK_SPACE: // select
+                                    _keys.Select = true;
+                                    break;  
+                                case SDL.SDL_Keycode.SDLK_y: // a
+                                    _keys.A = true;
+                                    break;  
+                                case SDL.SDL_Keycode.SDLK_x: // b
+                                    _keys.B = true;
+                                    break;    
+                            }
+                            
+                        }
+                        break;
+                    case SDL.SDL_EventType.SDL_KEYUP:
+                        {
+                            switch(e.key.keysym.sym)
+                            {
+                                case SDL.SDL_Keycode.SDLK_UP:
+                                    _keys.Up = false;
+                                    break;
+                                case SDL.SDL_Keycode.SDLK_DOWN:
+                                    _keys.Down = false;
+                                    break;
+                                case SDL.SDL_Keycode.SDLK_LEFT:
+                                    _keys.Left = false;
+                                    break;
+                                case SDL.SDL_Keycode.SDLK_RIGHT:
+                                    _keys.Right = false;
+                                    break;
+                                case SDL.SDL_Keycode.SDLK_RETURN: // start
+                                    _keys.Start = false;
+                                    break;  
+                                case SDL.SDL_Keycode.SDLK_SPACE: // select
+                                    _keys.Select = false;
+                                    break;  
+                                case SDL.SDL_Keycode.SDLK_y: // a
+                                    _keys.A = false;
+                                    break;  
+                                case SDL.SDL_Keycode.SDLK_x: // b
+                                    _keys.B = false;
+                                    break;    
+                            }
+                            
+                        }
+                        break;
 
                 }
             }
 
-            return 0;
+            return _keys;
         }
 
         public void Render(int[] screenBuffer)

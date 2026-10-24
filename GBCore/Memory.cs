@@ -10,6 +10,8 @@ namespace GBCore
         public Timer _timer;
         public Cartridge _cart;
 
+        public Input _input;
+
         public Memory(int size) 
         {
             _memory = new byte[size];
@@ -34,9 +36,10 @@ namespace GBCore
                 return _cart.Read(addr);    
             }
 
+            // reroute to Input
             if (addr == 0xFF00)
             {
-                return 0xFF;
+                return _input.Read();
             }
 
             return _memory[addr];
@@ -90,6 +93,12 @@ namespace GBCore
             {
                 _cart.Write(addr, data);
                 return;
+            }
+
+            // reroute to Input
+            if (addr == 0xFF00)
+            {
+                _input.Write(data);
             }
 
             _memory[addr] = data;
