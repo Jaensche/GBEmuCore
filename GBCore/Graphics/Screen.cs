@@ -194,15 +194,22 @@ namespace GBCore.Graphics
 
             for (int i = 0; i < rgbaPixels.Length; i++)
             {
-                if (binaryPixels[i] == 1)
+                switch(binaryPixels[i])
                 {
-                    rgbaPixels[i] = unchecked((int)0xFF0F380F);
+                    case 0:
+                        rgbaPixels[i] = unchecked((int)0xFFE0F8D0); 
+                        break;
+                    case 1:                
+                        rgbaPixels[i] = unchecked((int)0xFF88C070);
+                        break;
+                    case 2:                
+                        rgbaPixels[i] = unchecked((int)0xFF346856);
+                        break;
+                    case 3:                
+                        rgbaPixels[i] = unchecked((int)0xFF081820);
+                        break;
                 }
-                else
-                {
-                    // Transparent
-                    rgbaPixels[i] = unchecked(0); 
-                }
+                
             }
 
             return rgbaPixels;

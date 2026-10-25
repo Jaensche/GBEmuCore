@@ -32,42 +32,42 @@ namespace GBCore
             {
                 if(_selectButtons)
                 {
-                    result.SetBitTo0(SELECT_BUTTON_KEYS_BIT);
+                    result.SetBit(SELECT_BUTTON_KEYS_BIT, false);
                     if(_keys.Select)
                     {
-                        result.SetBitTo0(UP_OR_SELECT);
+                        result.SetBit(UP_OR_SELECT, false);
                     }
                     if(_keys.Start)
                     {
-                        result.SetBitTo0(DOWN_OR_START);
+                        result.SetBit(DOWN_OR_START, false);
                     }
                     if(_keys.B)
                     {
-                        result.SetBitTo0(LEFT_OR_B);
+                        result.SetBit(LEFT_OR_B, false);
                     }
                     if(_keys.A)
                     {
-                        result.SetBitTo0(RIGHT_OR_A);
+                        result.SetBit(RIGHT_OR_A, false);
                     }
                 }
                 if (_selectDpad)
                 {
-                    result.SetBitTo0(SELECT_DIRECTION_KEYS_BIT);
+                    result.SetBit(SELECT_DIRECTION_KEYS_BIT, false);
                     if(_keys.Up)
                     {
-                        result.SetBitTo0(UP_OR_SELECT);
+                        result.SetBit(UP_OR_SELECT, false);
                     }
                     if(_keys.Down)
                     {
-                        result.SetBitTo0(DOWN_OR_START);
+                        result.SetBit(DOWN_OR_START, false);
                     }
                     if(_keys.Left)
                     {
-                        result.SetBitTo0(LEFT_OR_B);
+                        result.SetBit(LEFT_OR_B, false);
                     }
                     if(_keys.Right)
                     {
-                        result.SetBitTo0(RIGHT_OR_A);
+                        result.SetBit(RIGHT_OR_A, false);
                     }
                 }
                 return result;

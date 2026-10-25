@@ -1,6 +1,4 @@
-﻿using System.Runtime.InteropServices.Marshalling;
-
-namespace GBCore.Graphics
+﻿namespace GBCore.Graphics
 {
     public enum FETCH_STATE
     {
@@ -20,8 +18,11 @@ namespace GBCore.Graphics
         private FETCH_STATE _fetchState;
         private int _ticks;
         private byte _tileId;
-        private int[] _pixelData = new int[8];
         private byte[] _vram; 
+
+        private byte _low;
+
+        private byte _high;
 
         FixedSizeQueue _pixelFetcherQueue;
 
@@ -50,42 +51,39 @@ namespace GBCore.Graphics
                 return;
             }
 
+            ushort offset;
+            ushort addr = 0;
+
             switch (_fetchState)
             {
                 case FETCH_STATE.ReadID:                    
-                    _tileId = _vram[(ushort)(_mapAddr - 0x8000 + _tileIndex)];
+                    _tileId = _vram[(ushort)(_mapAddr - TILE_DATA_START + _tileIndex)];
                     _fetchState = FETCH_STATE.ReadData0;                    
                     break;
 
                 case FETCH_STATE.ReadData0:
-                    ushort offset = (ushort)(TILE_DATA_START + _tileId * 16);
+                    offset = (ushort)(TILE_DATA_START + _tileId * 16);
+                    addr = (ushort)(offset + (ushort)(_tileLine * 2));
 
-                    ushort addr = (ushort)(offset + (ushort)(_tileLine * 2));
-
-                    byte data = _vram[addr - 0x8000];
-                    for (int bitPos = 0; bitPos <= 7; bitPos++)
-                    {
-                        _pixelData[bitPos] = data >> bitPos & 1;
-                    }
-
-                    if(data != 0x00)
-                    {
-
-                    }
+                    _low = _vram[addr - TILE_DATA_START];                    
                     
-                    _fetchState = FETCH_STATE.Push;
+                    _fetchState = FETCH_STATE.ReadData1;
                     break;
 
-                case FETCH_STATE.ReadData1:                    
+                case FETCH_STATE.ReadData1:
+                    offset = (ushort)(TILE_DATA_START + _tileId * 16);
+                    addr = (ushort)(offset + (ushort)(_tileLine * 2));
+                    _high = _vram[addr + 1 - TILE_DATA_START];  
+
                     _fetchState = FETCH_STATE.Push;
                     break;
 
                 case FETCH_STATE.Push:
                     if (_pixelFetcherQueue.Size() <= 8)
-                    {
+                    {    
                         for (int i = 7; i >= 0; i--)
                         {
-                            _pixelFetcherQueue.Enqueue(_pixelData[i]);
+                            _pixelFetcherQueue.Enqueue(_high.Bit(i) * 2 + _low.Bit(i));
                         }
                         
                         _tileIndex++;

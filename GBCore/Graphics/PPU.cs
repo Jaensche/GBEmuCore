@@ -31,8 +31,8 @@ namespace GBCore.Graphics
 
         private long _ticks = 0;
 
-        PixelFetcher _pixelFetcher; 
-        FixedSizeQueue _pixelFetcherQueue;
+        private PixelFetcher _pixelFetcher; 
+        private FixedSizeQueue _pixelFetcherQueue;
         private ushort _x;
         private ushort _y;
 
@@ -134,8 +134,17 @@ namespace GBCore.Graphics
                         {
                             if (_y < 144)
                             {
+                                byte backgroundPalette = _memory.Read(0xFF47);
+                                int[] colorByIndex = new int[4];
+
+                                // calculate the palette color values
+                                for(int i=0; i<=3; i++)
+                                {
+                                    colorByIndex[i] = backgroundPalette.Bit(i*2) + backgroundPalette.Bit(i*2+1) * 2;
+                                }
+
                                 byte ly = _memory.Read(LY_ADDR);
-                                ScreenBuffer[_x + ly * GB_SCREEN_WIDTH] = pixel;
+                                ScreenBuffer[_x + ly * GB_SCREEN_WIDTH] = colorByIndex[pixel];
                             }
                             _x++;
                         }
